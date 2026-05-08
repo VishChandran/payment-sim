@@ -364,7 +364,3 @@ This project demonstrates practical understanding of:
 * Technical program management architecture discussions
 
 ⸻
-
-Author
-
-Vis Chandran
