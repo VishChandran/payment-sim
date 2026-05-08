@@ -1,11 +1,15 @@
 function routeTransaction(txn) {
   console.log("📡 Broker received txn");
 
-  if (txn.bank === "MY_BANK") {
+  if (txn.issuerType === "INTERNAL") {
     return "INTERNAL";
-  } else {
+  }
+
+  if (txn.issuerType === "EXTERNAL") {
     return "EXTERNAL";
   }
+
+  return "UNKNOWN";
 }
 
 module.exports = { routeTransaction };
