@@ -1,15 +1,11 @@
 const config = {
-  port: 3000,
-
-  workerCount: 3,
-
-  maxRetries: 3,
-
-  transactionLimit: 10000,
-
+  port: Number(process.env.PORT) || 3000,
+  workerCount: Number(process.env.WORKER_COUNT) || 3,
+  maxRetries: Number(process.env.MAX_RETRIES) || 3,
+  transactionLimit: Number(process.env.TRANSACTION_LIMIT) || 10000,
   balances: {
-    defaultBalance: 5000,
-    inquiryBalance: 2500
+    defaultBalance: Number(process.env.DEFAULT_BALANCE) || 5000,
+    inquiryBalance: Number(process.env.INQUIRY_BALANCE) || 2500,
   },
 
   supportedIssuerTypes: ["INTERNAL", "EXTERNAL"],
@@ -34,8 +30,7 @@ const config = {
   riskRules: {
     internationalAtmLimit: 1000,
     ecommerceReviewLimit: 5000,
-    internationalPosReviewLimit: 3000
-  }
-};
-
+    internationalPosReviewLimit: 3000,
+  },
+}
 module.exports = { config };

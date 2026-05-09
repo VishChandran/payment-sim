@@ -5,13 +5,17 @@
   "main": "index.js",
   "scripts": {
   "start": "node app.js",
-  "dev": "node app.js"
-},
+  "dev": "node app.js",
+  "test-payment": "node tests/paymentTest.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "express": "^5.2.1"
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.1",
+    "helmet": "^8.1.0"
   }
 }

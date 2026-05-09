@@ -1,8 +1,12 @@
 const express = require("express");
+const crypto = require("crypto");
+const helmet = require("helmet");
+const cors = require("cors");
+const rateLimit = require("express-rate-limit");
+
 const app = express();
+
 const { config } = require("./config/config");
-const WORKER_COUNT = config.workerCount;
-const { validateTransaction } = require("./validation/validator");
 const { evaluateRisk } = require("./risk/riskEngine");
 const { maskSensitiveData } = require("./utils/mask");
 const { logEvent } = require("./logger/logger");
@@ -10,30 +14,51 @@ const { routeTransaction } = require("./broker/router");
 const { processTransaction } = require("./processor/processor");
 const { handleInternal } = require("./systems/internal");
 const { handleExternal } = require("./systems/external");
+
 const {
   addToQueue,
   getNextTransaction,
   addToDeadLetterQueue,
-  getDeadLetterQueue
+  getDeadLetterQueue,
 } = require("./queue/queue");
+
 const {
   saveTransaction,
   updateTransaction,
-  getTransaction
+  getTransaction,
 } = require("./store/store");
-const crypto = require("crypto");
+
+const WORKER_COUNT = config.workerCount;
 
 console.log("APP STARTING...");
-app.use(express.json());
+
+app.use(helmet());
+
+app.use(cors());
+
+app.use(express.json({ limit: "10kb" }));
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: {
+    status: "REJECTED",
+    reason: "Too many requests. Please try again later.",
+  },
+});
+
+app.use(apiLimiter);
 
 /* ROUTES */
+
 app.get("/", (req, res) => {
   res.json({
     status: "UP",
     service: "payment-sim",
-    message: "Payment simulator is running"
+    message: "Payment simulator is running",
   });
 });
+
 app.get("/info", (req, res) => {
   res.json({
     service: "payment-sim",
@@ -47,8 +72,8 @@ app.get("/info", (req, res) => {
       "dead letter queue",
       "structured logging",
       "internal systems",
-      "external network routing"
-    ]
+      "external network routing",
+    ],
   });
 });
 
@@ -59,100 +84,148 @@ app.get("/status/:id", (req, res) => {
 
   if (!txn) {
     return res.status(404).json({
-      error: "Transaction not found"
+      error: "Transaction not found",
     });
   }
 
-  res.json(txn);
+  return res.json(txn);
 });
+
 app.get("/dead-letter", (req, res) => {
   res.json({
     count: getDeadLetterQueue().length,
-    transactions: getDeadLetterQueue()
+    transactions: getDeadLetterQueue(),
   });
 });
+
 app.post("/pay", (req, res) => {
-  const txn = req.body;
+  try {
+    const txn = req.body;
 
-  const validation = validateTransaction(txn);
+    logEvent("api", "RAW_TRANSACTION_RECEIVED", "N/A", maskSensitiveData(txn));
 
-  if (!validation.valid) {
-    return res.status(400).json({
-      status: "REJECTED",
-      reason: validation.reason
-    });
-  }
+    if (!txn.amount || !txn.fromAccount || !txn.toAccount || !txn.type) {
+      return res.status(400).json({
+        status: "DECLINED",
+        reason: "Missing required transaction fields",
+      });
+    }
 
-  const risk = evaluateRisk(txn);
+    if (txn.amount <= 0) {
+      return res.status(400).json({
+        status: "DECLINED",
+        reason: "Amount must be greater than 0",
+      });
+    }
 
-  if (risk.decision === "REJECT") {
-    return res.status(403).json({
-      status: "REJECTED",
-      reason: risk.reason
-    });
-  }
+    const risk = evaluateRisk(txn);
 
-  if (risk.decision === "REVIEW") {
+    if (risk.decision === "REJECT") {
+      return res.status(403).json({
+        status: "REJECTED",
+        reason: risk.reason,
+      });
+    }
+
+    if (risk.decision === "REVIEW") {
+      return res.status(202).json({
+        status: "MANUAL_REVIEW",
+        reason: risk.reason,
+      });
+    }
+
+    const txnId = crypto.randomUUID();
+
+    const now = new Date().toISOString();
+
+const fullTxn = {
+  id: txnId,
+  ...txn,
+  status: "ACCEPTED",
+  retryCount: 0,
+  createdAt: now,
+  updatedAt: now,
+  processingTimeline: [
+    {
+      status: "ACCEPTED",
+      timestamp: now,
+      message: "Transaction accepted by API",
+    },
+  ],
+};
+
+    logEvent(
+      "api",
+      "TRANSACTION_RECEIVED",
+      fullTxn.id,
+      maskSensitiveData(fullTxn)
+    );
+
+    saveTransaction(fullTxn);
+    addToQueue(fullTxn);
+
     return res.status(202).json({
-      status: "MANUAL_REVIEW",
-      reason: risk.reason
+      status: "ACCEPTED",
+      transactionId: txnId,
+      message: "Transaction accepted for processing",
+    });
+  } catch (error) {
+    console.error("❌ Error accepting payment:", error);
+
+    return res.status(500).json({
+      status: "ERROR",
+      reason: "Internal server error",
     });
   }
-
-  const txnId = crypto.randomUUID();
-
-  const fullTxn = {
-    id: txnId,
-    ...txn,
-    status: "ACCEPTED",
-    retryCount: 0
-  };
-
-  logEvent(
-    "api",
-    "TRANSACTION_RECEIVED",
-    fullTxn.id,
-    maskSensitiveData(fullTxn)
-  );
-
-  saveTransaction(fullTxn);
-  addToQueue(fullTxn);
-
-  res.json({
-    status: "ACCEPTED",
-    transactionId: txnId
-  });
 });
 
-/* WORKER (👇 BELOW ROUTES) */
-function startWorker(workerId)  {
-  
+/* WORKER */
+
+function startWorker(workerId) {
   setInterval(() => {
     const txn = getNextTransaction();
 
     if (!txn) return;
 
     logEvent("worker", "PROCESSING_STARTED", txn.id, {
-      workerId
+      workerId,
     });
 
     updateTransaction(txn.id, {
+  status: "PROCESSING",
+  workerId,
+  updatedAt: new Date().toISOString(),
+  processingTimeline: [
+    ...(txn.processingTimeline || []),
+    {
       status: "PROCESSING",
-      workerId
-    });
+      timestamp: new Date().toISOString(),
+      message: `Worker ${workerId} started processing`,
+    },
+  ],
+});
 
     const result = processTransaction(txn);
 
     if (result.status === "DECLINED") {
       updateTransaction(txn.id, {
-        status: "DECLINED",
-        reason: result.reason,
-        workerId
-      });
+  status: "DECLINED",
+  reason: result.reason,
+  workerId,
+  updatedAt: new Date().toISOString(),
+  processingTimeline: [
+    ...(txn.processingTimeline || []),
+    {
+      status: "DECLINED",
+      timestamp: new Date().toISOString(),
+      message: result.reason,
+    },
+  ],
+});
 
       logEvent("processor", "TRANSACTION_DECLINED", txn.id, {
         reason: result.reason,
-        workerId
+        workerId,
       });
 
       return;
@@ -161,24 +234,24 @@ function startWorker(workerId)  {
     if (result.status === "FAILED") {
       const retryCount = txn.retryCount || 0;
 
-   if (retryCount < config.maxRetries) {
+      if (retryCount < config.maxRetries) {
         const retryTxn = {
           ...txn,
           retryCount: retryCount + 1,
-          status: "RETRYING"
+          status: "RETRYING",
         };
 
         updateTransaction(txn.id, {
           status: "RETRYING",
           retryCount: retryTxn.retryCount,
           reason: result.reason,
-          workerId
+          workerId,
         });
 
         logEvent("worker", "TRANSACTION_RETRYING", txn.id, {
           retryCount: retryTxn.retryCount,
           reason: result.reason,
-          workerId
+          workerId,
         });
 
         addToQueue(retryTxn);
@@ -190,7 +263,7 @@ function startWorker(workerId)  {
         status: "FAILED",
         reason: result.reason,
         retryCount,
-        workerId
+        workerId,
       };
 
       updateTransaction(txn.id, failedTxn);
@@ -199,7 +272,7 @@ function startWorker(workerId)  {
       logEvent("worker", "TRANSACTION_FAILED_PERMANENTLY", txn.id, {
         reason: result.reason,
         retryCount,
-        workerId
+        workerId,
       });
 
       return;
@@ -215,27 +288,60 @@ function startWorker(workerId)  {
       finalResult = handleExternal(txn);
     }
 
-    updateTransaction(txn.id, {
+    if (finalResult.status === "DECLINED") {
+      updateTransaction(txn.id, {
+        status: "DECLINED",
+        route,
+        reason: finalResult.reason,
+        workerId,
+      });
+
+      logEvent("worker", "TRANSACTION_DECLINED", txn.id, {
+        route,
+        reason: finalResult.reason,
+        workerId,
+      });
+
+      return;
+    }
+
+  updateTransaction(txn.id, {
+  status: "COMPLETED",
+  route,
+  result: finalResult,
+  workerId,
+  updatedAt: new Date().toISOString(),
+  completedAt: new Date().toISOString(),
+  processingTimeline: [
+    ...(txn.processingTimeline || []),
+    {
+      status: "PROCESSING",
+      timestamp: new Date().toISOString(),
+      message: `Worker ${workerId} processed transaction`,
+    },
+    {
       status: "COMPLETED",
-      route,
-      result: finalResult,
-      workerId
-    });
+      timestamp: new Date().toISOString(),
+      message: "Transaction processed successfully",
+    },
+  ],
+});
 
     logEvent("worker", "TRANSACTION_COMPLETED", txn.id, {
       route,
       result: finalResult,
-      workerId
+      workerId,
     });
-
   }, 3000);
 }
-  for (let i = 1; i <= WORKER_COUNT; i++) {
+
+for (let i = 1; i <= WORKER_COUNT; i++) {
   startWorker(i);
 }
 
-
 /* SERVER START */
+console.log("PORT FROM ENV:", process.env.PORT);
+console.log("CONFIG PORT:", config.port);
 app.listen(config.port, () => {
   console.log(`Server running on http://localhost:${config.port}`);
 });
