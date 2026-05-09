@@ -68,7 +68,6 @@ payment-sim/
 ├── risk/
 ├── store/
 ├── systems/
-├── tests/
 ├── utils/
 └── validation/
 ```
@@ -89,8 +88,8 @@ POST /pay
 
 Example Request:
 
-json {   "amount": 500,   "fromAccount": "A123",   "toAccount": "B456",   "type": "PURCHASE",   "issuerType": "INTERNAL",   "pin": "1234" } 
-
+```json{   "amount": 500,   "fromAccount": "A123",   "toAccount": "B456",   "type": "PURCHASE",   "issuerType": "INTERNAL",   "pin": "1234" } 
+```
 Example Response:
 
 json {   "status": "ACCEPTED",   "transactionId": "uuid-value" } 
@@ -156,8 +155,9 @@ bash npm run test-payment
 
 Install dependencies:
 
-bash npm install 
-
+```bash
+npm install 
+```
 Start application:
 
 bash npm start 
