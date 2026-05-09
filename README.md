@@ -1,366 +1,196 @@
-Payment Processing Simulator
+# Payment Processing Simulator
 
 A backend payment processing simulator built with Node.js and Express that models enterprise-style payment transaction flows.
 
-This project evolved from a simple API into a multi-stage asynchronous payment orchestration platform with:
+The project simulates how payment systems process, validate, route, retry, and track transactions asynchronously using queue-based workers and routing logic.
 
-* Validation layers
-* Queue-based async processing
-* Retry handling
-* Dead Letter Queue (DLQ)
-* Structured logging
-* Internal banking systems
-* External processor routing
-* Mastercard network simulation
+---
 
-⸻
+# Features
 
-Project Goals
+- REST API for payment transactions
+- Async queue-based processing
+- Multi-worker transaction handling
+- Internal and external payment routing
+- Retry handling and failure recovery
+- Dead Letter Queue (DLQ)
+- Transaction lifecycle tracking
+- Structured logging
+- Security middleware
+- Rate limiting
+- Environment-based configuration
+- Automated API testing
 
-This project was built to learn and simulate:
+---
 
-* Payment processing architecture
-* Enterprise backend design
-* Transaction orchestration
-* Async worker systems
-* Reliability engineering patterns
-* Payment routing concepts
-* Mainframe modernization patterns
-* Distributed system fundamentals
-
-⸻
-
-Architecture Overview
+# Architecture Overview
 
 Client
- ↓
+↓
 Validation Layer
- ↓
+↓
 Queue
- ↓
+↓
 Async Worker
- ↓
+↓
 Processor / Orchestrator
- ↓
+↓
 Routing Decision
-   ├─ Internal Banking Systems
-   │     ├─ System A (PIN Validation)
-   │     └─ System B (Balance Validation)
-   │
-   ├─ TSYS Processor
-   │
-   └─ Mastercard Network
+├── Internal Banking Systems
+├── External Processor
+└── Mastercard / TSYS Simulation
 
-⸻
+---
 
-Features Implemented
+# Tech Stack
 
-Day 1–2
+- Node.js
+- Express.js
+- JavaScript
+- Git
+- GitHub
 
-* Express server setup
-* REST API creation
-* /pay endpoint
+---
 
-Day 3
-
-* Transaction processor
-* Routing engine
-* Internal vs external routing
-
-Day 4
-
-* Async queue
-* Worker processing
-* Background transaction handling
-
-Day 5
-
-* Transaction store
-* /status/:id endpoint
-* Transaction lifecycle tracking
-
-Day 6
-
-* Retry logic
-* Failure handling
-* Retry counts
-
-Day 7
-
-* Dead Letter Queue (DLQ)
-* Failed transaction isolation
-* /dead-letter endpoint
-
-Day 8
-
-* Validation layer
-* Business rules
-* Bad request rejection
-
-Day 9
-
-* Structured logging
-* Observability concepts
-* Transaction tracing
-
-Day 10
-
-* Deterministic routing
-* Internal banking systems
-* TSYS processor simulation
-* Mastercard network simulation
-
-⸻
-
-Tech Stack
-
-* Node.js
-* Express.js
-* JavaScript
-* Git
-* GitHub
-
-⸻
-
-Folder Structure
+# Folder Structure
 
 payment-sim/
-│
 ├── app.js
 ├── package.json
-├── .gitignore
-│
 ├── broker/
-│   └── router.js
-│
+├── config/
 ├── logger/
-│   └── logger.js
-│
 ├── processor/
-│   └── processor.js
-│
 ├── queue/
-│   └── queue.js
-│
+├── risk/
 ├── store/
-│   └── store.js
-│
 ├── systems/
-│   ├── internal.js
-│   ├── external.js
-│   ├── systemA.js
-│   └── systemB.js
-│
+├── tests/
+├── utils/
 └── validation/
-    └── validator.js
 
-⸻
+---
 
-API Endpoints
+# API Endpoints
 
-Health Check
+## Health Check
 
 GET /
 
-Response:
+---
 
-Server is alive
-
-⸻
-
-Submit Payment Transaction
+## Submit Payment
 
 POST /pay
 
 Example Request:
 
-{
-  "amount": 100,
-  "bank": "MY_BANK",
-  "cardNumber": "411111",
-  "pin": "1234",
-  "issuerType": "INTERNAL"
-}
+json {   "amount": 500,   "fromAccount": "A123",   "toAccount": "B456",   "type": "PURCHASE",   "issuerType": "INTERNAL",   "pin": "1234" } 
 
-Example External TSYS Request:
+Example Response:
 
-{
-  "amount": 100,
-  "bank": "OTHER_BANK",
-  "cardNumber": "411111",
-  "issuerType": "EXTERNAL",
-  "network": "TSYS"
-}
+json {   "status": "ACCEPTED",   "transactionId": "uuid-value" } 
 
-Example Mastercard Request:
+---
 
-{
-  "amount": 100,
-  "bank": "OTHER_BANK",
-  "cardNumber": "511111",
-  "issuerType": "EXTERNAL",
-  "network": "MASTERCARD"
-}
-
-Response:
-
-{
-  "status": "ACCEPTED",
-  "transactionId": "uuid-value"
-}
-
-⸻
-
-Check Transaction Status
+## Check Transaction Status
 
 GET /status/:id
 
 Example Response:
 
-{
-  "id": "uuid-value",
-  "status": "COMPLETED",
-  "route": "EXTERNAL",
-  "result": {
-    "status": "SUCCESS",
-    "system": "TSYS"
-  }
-}
+json {   "status": "COMPLETED",   "route": "INTERNAL" } 
 
-⸻
+---
 
-View Dead Letter Queue
+## View Dead Letter Queue
 
 GET /dead-letter
 
-Example Response:
+---
 
-{
-  "count": 1,
-  "transactions": [
-    {
-      "status": "FAILED",
-      "retryCount": 3
-    }
-  ]
-}
+# Transaction Lifecycle
 
-⸻
+ACCEPTED
+↓
+PROCESSING
+↓
+COMPLETED / DECLINED / FAILED
+↓
+Dead Letter Queue (if retries exhausted)
 
-Internal System Flow
+---
 
-Internal issuer transactions go through:
+# Security Features
 
-Processor
- ↓
-System A → PIN Validation
- ↓
-System B → Balance Validation
- ↓
-Approval
+- Helmet middleware
+- CORS protection
+- Request size limiting
+- API rate limiting
+- Sensitive data masking in logs
 
-⸻
+---
 
-Retry + DLQ Flow
+# Environment Configuration
 
-Failure
- ↓
-Retry 1
- ↓
-Retry 2
- ↓
-Retry 3
- ↓
-Dead Letter Queue
+Example:
 
-⸻
+bash PORT=5001 WORKER_COUNT=5 node app.js 
 
-Structured Logging Example
+---
 
-{
-  "timestamp": "2026-05-08T11:57:37.333Z",
-  "service": "worker",
-  "event": "TRANSACTION_RETRYING",
-  "transactionId": "txn-id",
-  "details": {
-    "retryCount": 1,
-    "reason": "Simulated processor failure"
-  }
-}
+# Automated Testing
 
-⸻
+Run automated API test:
 
-How To Run
+bash npm run test-payment 
 
-Install dependencies
+---
 
-npm install
+# How To Run
 
-Start application
+Install dependencies:
 
-node app.js
+bash npm install 
+
+Start application:
+
+bash npm start 
 
 Server runs on:
 
-http://localhost:3000
+bash http://localhost:3000 
 
-⸻
+---
 
-Example CURL Commands
+# Example CURL Command
 
-Internal Transaction
+bash curl -X POST http://localhost:3000/pay \ -H "Content-Type: application/json" \ -d '{   "amount": 500,   "fromAccount": "A123",   "toAccount": "B456",   "type": "PURCHASE",   "issuerType": "INTERNAL",   "pin": "1234" }' 
 
-curl -X POST http://localhost:3000/pay \
--H "Content-Type: application/json" \
--d '{"amount":100,"bank":"MY_BANK","cardNumber":"411111","pin":"1234","issuerType":"INTERNAL"}'
+---
 
-⸻
+# Future Enhancements
 
-TSYS Transaction
+- Redis/BullMQ queues
+- Docker deployment
+- MongoDB/PostgreSQL persistence
+- ISO8583 simulation
+- Kafka event streaming
+- AWS deployment
+- Fraud/risk engine improvements
+- Monitoring and metrics
 
-curl -X POST http://localhost:3000/pay \
--H "Content-Type: application/json" \
--d '{"amount":100,"bank":"OTHER_BANK","cardNumber":"411111","issuerType":"EXTERNAL","network":"TSYS"}'
+---
 
-⸻
+# Learning Outcomes
 
-Mastercard Transaction
+This project demonstrates:
 
-curl -X POST http://localhost:3000/pay \
--H "Content-Type: application/json" \
--d '{"amount":100,"bank":"OTHER_BANK","cardNumber":"511111","issuerType":"EXTERNAL","network":"MASTERCARD"}'
-
-⸻
-
-Future Enhancements
-
-Planned future enhancements include:
-
-* MongoDB/PostgreSQL persistence
-* Redis/BullMQ queues
-* Docker deployment
-* ISO8583 message simulation
-* Mainframe integration simulation
-* Metrics and monitoring
-* Multi-worker concurrency
-* Fraud/risk engine
-* Config-driven routing
-
-⸻
-
-Learning Outcomes
-
-This project demonstrates practical understanding of:
-
-* Backend API design
-* Enterprise payment systems
-* Distributed systems concepts
-* Queue processing
-* Retry patterns
-* DLQ architecture
-* Observability
-* System orchestration
-* Mainframe modernization concepts
-* Technical program management architecture discussions
-
-⸻
+- Backend API development
+- Async processing patterns
+- Queue and worker architecture
+- Retry and DLQ handling
+- Payment routing concepts
+- Observability and logging
+- Security middleware integration
+- Enterprise backend architecture concepts
