@@ -25,20 +25,22 @@ The project simulates how payment systems process, validate, route, retry, and t
 
 # Architecture Overview
 
+```text
 Client
-↓
+  ↓
 Validation Layer
-↓
+  ↓
 Queue
-↓
+  ↓
 Async Worker
-↓
+  ↓
 Processor / Orchestrator
-↓
+  ↓
 Routing Decision
 ├── Internal Banking Systems
 ├── External Processor
 └── Mastercard / TSYS Simulation
+```
 
 ---
 
@@ -54,6 +56,7 @@ Routing Decision
 
 # Folder Structure
 
+```text
 payment-sim/
 ├── app.js
 ├── package.json
@@ -68,6 +71,7 @@ payment-sim/
 ├── tests/
 ├── utils/
 └── validation/
+```
 
 ---
 
@@ -111,6 +115,7 @@ GET /dead-letter
 
 # Transaction Lifecycle
 
+```text
 ACCEPTED
 ↓
 PROCESSING
@@ -118,7 +123,7 @@ PROCESSING
 COMPLETED / DECLINED / FAILED
 ↓
 Dead Letter Queue (if retries exhausted)
-
+```
 ---
 
 # Security Features
