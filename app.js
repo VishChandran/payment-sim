@@ -6,36 +6,25 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 
+const { transactionQueue } = require("./jobs/transactionQueue");
+require("./jobs/transactionWorker");
+
 const { config } = require("./config/config");
 const { evaluateRisk } = require("./risk/riskEngine");
 const { maskSensitiveData } = require("./utils/mask");
 const { logEvent } = require("./logger/logger");
-const { routeTransaction } = require("./broker/router");
-const { processTransaction } = require("./processor/processor");
-const { handleInternal } = require("./systems/internal");
-const { handleExternal } = require("./systems/external");
-
-const {
-  addToQueue,
-  getNextTransaction,
-  addToDeadLetterQueue,
-  getDeadLetterQueue,
-} = require("./queue/queue");
 
 const {
   saveTransaction,
-  updateTransaction,
   getTransaction,
 } = require("./store/store");
 
-const WORKER_COUNT = config.workerCount;
+const { getDeadLetterQueue } = require("./queue/queue");
 
 console.log("APP STARTING...");
 
 app.use(helmet());
-
 app.use(cors());
-
 app.use(express.json({ limit: "10kb" }));
 
 const apiLimiter = rateLimit({
@@ -62,12 +51,13 @@ app.get("/", (req, res) => {
 app.get("/info", (req, res) => {
   res.json({
     service: "payment-sim",
-    architecture: "async payment processing simulator",
+    architecture: "BullMQ-backed async payment processing simulator",
     features: [
       "validation",
       "risk engine",
-      "queue",
-      "multi-worker processing",
+      "BullMQ queue",
+      "Redis-backed worker processing",
+      "PostgreSQL transaction lifecycle persistence",
       "retry logic",
       "dead letter queue",
       "structured logging",
@@ -77,10 +67,10 @@ app.get("/info", (req, res) => {
   });
 });
 
-app.get("/status/:id", (req, res) => {
+app.get("/status/:id", async (req, res) => {
   const txnId = req.params.id;
 
-  const txn = getTransaction(txnId);
+  const txn = await getTransaction(txnId);
 
   if (!txn) {
     return res.status(404).json({
@@ -98,7 +88,7 @@ app.get("/dead-letter", (req, res) => {
   });
 });
 
-app.post("/pay", (req, res) => {
+app.post("/pay", async (req, res) => {
   try {
     const txn = req.body;
 
@@ -135,24 +125,23 @@ app.post("/pay", (req, res) => {
     }
 
     const txnId = crypto.randomUUID();
-
     const now = new Date().toISOString();
 
-const fullTxn = {
-  id: txnId,
-  ...txn,
-  status: "ACCEPTED",
-  retryCount: 0,
-  createdAt: now,
-  updatedAt: now,
-  processingTimeline: [
-    {
+    const fullTxn = {
+      id: txnId,
+      ...txn,
       status: "ACCEPTED",
-      timestamp: now,
-      message: "Transaction accepted by API",
-    },
-  ],
-};
+      retryCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      processingTimeline: [
+        {
+          status: "ACCEPTED",
+          timestamp: now,
+          message: "Transaction accepted by API",
+        },
+      ],
+    };
 
     logEvent(
       "api",
@@ -161,8 +150,9 @@ const fullTxn = {
       maskSensitiveData(fullTxn)
     );
 
-    saveTransaction(fullTxn);
-    addToQueue(fullTxn);
+    await saveTransaction(fullTxn);
+
+    await transactionQueue.add("process-transaction", fullTxn);
 
     return res.status(202).json({
       status: "ACCEPTED",
@@ -179,169 +169,11 @@ const fullTxn = {
   }
 });
 
-/* WORKER */
-
-function startWorker(workerId) {
-  setInterval(() => {
-    const txn = getNextTransaction();
-
-    if (!txn) return;
-
-    logEvent("worker", "PROCESSING_STARTED", txn.id, {
-      workerId,
-    });
-
-    updateTransaction(txn.id, {
-  status: "PROCESSING",
-  workerId,
-  updatedAt: new Date().toISOString(),
-  processingTimeline: [
-    ...(txn.processingTimeline || []),
-    {
-      status: "PROCESSING",
-      timestamp: new Date().toISOString(),
-      message: `Worker ${workerId} started processing`,
-    },
-  ],
-});
-
-    const result = processTransaction(txn);
-
-    if (result.status === "DECLINED") {
-      updateTransaction(txn.id, {
-  status: "DECLINED",
-  reason: result.reason,
-  workerId,
-  updatedAt: new Date().toISOString(),
-  processingTimeline: [
-    ...(txn.processingTimeline || []),
-    {
-      status: "DECLINED",
-      timestamp: new Date().toISOString(),
-      message: result.reason,
-    },
-  ],
-});
-
-      logEvent("processor", "TRANSACTION_DECLINED", txn.id, {
-        reason: result.reason,
-        workerId,
-      });
-
-      return;
-    }
-
-    if (result.status === "FAILED") {
-      const retryCount = txn.retryCount || 0;
-
-      if (retryCount < config.maxRetries) {
-        const retryTxn = {
-          ...txn,
-          retryCount: retryCount + 1,
-          status: "RETRYING",
-        };
-
-        updateTransaction(txn.id, {
-          status: "RETRYING",
-          retryCount: retryTxn.retryCount,
-          reason: result.reason,
-          workerId,
-        });
-
-        logEvent("worker", "TRANSACTION_RETRYING", txn.id, {
-          retryCount: retryTxn.retryCount,
-          reason: result.reason,
-          workerId,
-        });
-
-        addToQueue(retryTxn);
-        return;
-      }
-
-      const failedTxn = {
-        ...txn,
-        status: "FAILED",
-        reason: result.reason,
-        retryCount,
-        workerId,
-      };
-
-      updateTransaction(txn.id, failedTxn);
-      addToDeadLetterQueue(failedTxn);
-
-      logEvent("worker", "TRANSACTION_FAILED_PERMANENTLY", txn.id, {
-        reason: result.reason,
-        retryCount,
-        workerId,
-      });
-
-      return;
-    }
-
-    const route = routeTransaction(txn);
-
-    let finalResult;
-
-    if (route === "INTERNAL") {
-      finalResult = handleInternal(txn);
-    } else {
-      finalResult = handleExternal(txn);
-    }
-
-    if (finalResult.status === "DECLINED") {
-      updateTransaction(txn.id, {
-        status: "DECLINED",
-        route,
-        reason: finalResult.reason,
-        workerId,
-      });
-
-      logEvent("worker", "TRANSACTION_DECLINED", txn.id, {
-        route,
-        reason: finalResult.reason,
-        workerId,
-      });
-
-      return;
-    }
-
-  updateTransaction(txn.id, {
-  status: "COMPLETED",
-  route,
-  result: finalResult,
-  workerId,
-  updatedAt: new Date().toISOString(),
-  completedAt: new Date().toISOString(),
-  processingTimeline: [
-    ...(txn.processingTimeline || []),
-    {
-      status: "PROCESSING",
-      timestamp: new Date().toISOString(),
-      message: `Worker ${workerId} processed transaction`,
-    },
-    {
-      status: "COMPLETED",
-      timestamp: new Date().toISOString(),
-      message: "Transaction processed successfully",
-    },
-  ],
-});
-
-    logEvent("worker", "TRANSACTION_COMPLETED", txn.id, {
-      route,
-      result: finalResult,
-      workerId,
-    });
-  }, 3000);
-}
-
-for (let i = 1; i <= WORKER_COUNT; i++) {
-  startWorker(i);
-}
-
 /* SERVER START */
+
 console.log("PORT FROM ENV:", process.env.PORT);
 console.log("CONFIG PORT:", config.port);
+
 app.listen(config.port, () => {
   console.log(`Server running on http://localhost:${config.port}`);
 });

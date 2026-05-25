@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS transactions (
+  id SERIAL PRIMARY KEY,
+  txn_id VARCHAR(50) UNIQUE NOT NULL,
+  correlation_id VARCHAR(100) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  channel VARCHAR(50) NOT NULL,
+  card_number VARCHAR(25),
+  status VARCHAR(30) NOT NULL,
+  received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  from_account VARCHAR(50),
+  to_account VARCHAR(50),
+  type VARCHAR(50),
+  retry_count INTEGER DEFAULT 0,
+  worker_id INTEGER,
+  route VARCHAR(50),
+  reason TEXT,
+  result JSONB,
+  processing_timeline JSONB
+);
