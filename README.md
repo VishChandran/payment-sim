@@ -8,18 +8,20 @@ The project simulates how payment systems process, validate, route, retry, and t
 
 # Features
 
-- REST API for payment transactions
-- Async queue-based processing
-- Multi-worker transaction handling
+- REST API for payment transaction processing
+- PostgreSQL transaction persistence
+- Redis-backed BullMQ queue processing
+- Asynchronous worker architecture
+- Transaction lifecycle tracking
 - Internal and external payment routing
+- TSYS and Mastercard network simulation
 - Retry handling and failure recovery
 - Dead Letter Queue (DLQ)
-- Transaction lifecycle tracking
-- Structured logging
-- Security middleware
-- Rate limiting
+- Structured logging and observability
+- Risk and validation engine
+- Security middleware and rate limiting
+- Dockerized deployment with Docker Compose
 - Environment-based configuration
-- Automated API testing
 
 ---
 
@@ -94,27 +96,50 @@ This project helped strengthen understanding of how enterprise payment systems a
 ```text
 Client
   ↓
-Validation Layer
+Express API
   ↓
-Queue
+Validation & Risk Engine
   ↓
-Async Worker
+BullMQ Queue
   ↓
-Processor / Orchestrator
+Redis
   ↓
-Routing Decision
-├── Internal Banking Systems
-├── External Processor
-└── Mastercard / TSYS Simulation
+BullMQ Worker
+  ↓
+Routing Engine
+  ├── INTERNAL
+  ├── TSYS
+  └── MASTERCARD
+  ↓
+PostgreSQL
 ```
 
 ---
 
 # Tech Stack
 
+### Application Layer
+
 - Node.js
 - Express.js
 - JavaScript
+
+### Data Layer
+
+- PostgreSQL
+
+### Queue & Processing Layer
+
+- Redis
+- BullMQ
+
+### Infrastructure
+
+- Docker
+- Docker Compose
+
+### Tooling
+
 - Git
 - GitHub
 
@@ -123,11 +148,17 @@ Routing Decision
 # Folder Structure
 
 ```text
+
 payment-sim/
 ├── app.js
-├── package.json
 ├── broker/
 ├── config/
+├── db/
+│   ├── connection.js
+│   └── init.sql
+├── jobs/
+│   ├── transactionQueue.js
+│   └── transactionWorker.js
 ├── logger/
 ├── processor/
 ├── queue/
@@ -135,7 +166,10 @@ payment-sim/
 ├── store/
 ├── systems/
 ├── utils/
-└── validation/
+├── validation/
+├── Dockerfile
+├── docker-compose.yml
+└── package.json
 ```
 
 ---
@@ -226,7 +260,9 @@ Dead Letter Queue (if retries exhausted)
 Example:
 
 ```bash
-PORT=5001 WORKER_COUNT=5 node app.js
+PORT=3000
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/hybrid_banking
+REDIS_HOST=127.0.0.1
 ```
 
 ---
@@ -243,23 +279,44 @@ npm run test-payment
 
 # How To Run
 
+# Local Development
+
 Install dependencies:
 
 ```bash
 npm install
 ```
 
-Start application:
+Start PostgreSQL and Redis locally.
+
+Run application:
 
 ```bash
-npm start
+node app.js
 ```
 
-Server runs on:
+Application:
 
-```bash
+```text
 http://localhost:3000
 ```
+---
+
+# Docker Deployment
+
+Build and start all services:
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+```text
+Application  : localhost:3000
+PostgreSQL   : localhost:5432
+Redis        : localhost:6379
+
 
 ---
 
@@ -282,26 +339,57 @@ curl -X POST http://localhost:3000/pay \
 
 # Future Enhancements
 
-- Redis/BullMQ queues
-- Docker deployment
-- MongoDB/PostgreSQL persistence
-- ISO8583 simulation
+- ISO8583 message simulation
 - Kafka event streaming
-- AWS deployment
-- Fraud/risk engine improvements
-- Monitoring and metrics
+- Fraud scoring enhancements
+- Settlement processing engine
+- Multi-region deployment patterns
+- AWS deployment automation
+- Metrics and monitoring dashboards
+- Distributed tracing
+- High-volume load testing
 
 ---
 
 # Learning Outcomes
 
-This project demonstrates:
+This project demonstrates practical experience with:
 
-- Backend API development
-- Async processing patterns
-- Queue and worker architecture
-- Retry and DLQ handling
-- Payment routing concepts
-- Observability and logging
-- Security middleware integration
-- Enterprise backend architecture concepts
+### Payment Processing Concepts
+
+- Transaction authorization flows
+- Internal vs external routing
+- Payment network integration patterns
+- Transaction lifecycle management
+- Settlement and reconciliation foundations
+
+### Distributed Systems Concepts
+
+- Asynchronous processing
+- Queue-based architectures
+- Worker orchestration
+- Retry and failure recovery patterns
+- Dead Letter Queue handling
+- Event-driven processing models
+
+### Data Engineering Concepts
+
+- Transaction persistence
+- Auditability and traceability
+- Status lifecycle tracking
+- JSON-based processing timelines
+
+### Infrastructure & DevOps Concepts
+
+- Containerization with Docker
+- Multi-service orchestration with Docker Compose
+- Environment-driven configuration
+- Service dependency management
+
+### Enterprise Architecture Concepts
+
+- Separation of concerns
+- Modular service design
+- Routing engine ownership
+- Operational observability
+- Resiliency and scalability trade-offs
