@@ -25,72 +25,6 @@ The project simulates how payment systems process, validate, route, retry, and t
 
 ---
 
-# TPM / Enterprise Delivery & Project Management Learning Outcomes
-
-This project was designed not only as a backend engineering exercise, but also as a simulation of how enterprise-scale payment modernization initiatives are planned, governed, delivered, monitored, and operationalized.
-
-## Architecture & System Design
-
-- Asynchronous payment processing architecture
-- Queue-based worker orchestration
-- Internal vs external payment routing
-- Config-driven enterprise architecture
-- Multi-worker concurrency and scaling patterns
-- Modular backend service decomposition
-
-## Resiliency & Reliability Engineering
-
-- Retry strategies for transient failures
-- Dead Letter Queue (DLQ) handling
-- Failure isolation and transaction recovery
-- Transaction lifecycle observability
-- Structured logging and operational monitoring
-- High-availability processing concepts
-
-## Risk, Controls & Security
-
-- PCI-style sensitive data masking
-- Fraud/risk rule evaluation engine
-- Channel-aware transaction controls
-- Validation and transaction integrity checks
-- Operational risk reduction through defensive processing patterns
-
-## Project Management & TPM Concepts Simulated
-
-- Breaking down a complex payment platform into incremental delivery phases
-- Managing dependencies between routing, processing, risk, and operational modules
-- Designing scalable and maintainable architecture for long-term supportability
-- Simulating enterprise operational support concerns such as monitoring, retries, recovery, and transaction tracing
-- Applying separation of concerns to reduce code conflicts and improve team collaboration
-- Building reusable and configurable components to support future enhancements
-- Structuring development in iterative delivery milestones similar to Agile/Scrum implementation phases
-- Balancing functional requirements with operational resiliency and security considerations
-- Demonstrating systems-thinking across architecture, operations, risk, and support models
-
-## Enterprise Delivery & Operational Thinking
-
-- API contract-driven development
-- Transaction lifecycle tracking
-- Operational observability endpoints
-- Worker scaling simulation
-- Queue-driven asynchronous processing
-- Service orchestration concepts used in enterprise payment platforms
-
-## Real-World Banking & Payments Concepts Simulated
-
-- Purchase authorization flows
-- Cash withdrawal processing
-- Balance inquiry orchestration
-- Reversal handling
-- External processor integrations
-- TSYS and Mastercard routing simulation
-- Internal banking subsystem orchestration
-- Channel-based transaction handling (ATM, POS, ECOM)
-
-This project helped strengthen understanding of how enterprise payment systems are architected, delivered, scaled, monitored, governed, and operationalized across both technical engineering and technical program management domains.
-
----
-
 # Architecture Overview
 
 ```text
@@ -116,29 +50,62 @@ PostgreSQL
 
 ---
 
+# Engineering Concepts Explored
+
+This project was built to better understand the technical and operational challenges involved in modern payment platforms.
+
+Areas explored include:
+
+- Asynchronous transaction processing
+- Queue-based workload distribution
+- Internal and external payment routing
+- Retry and recovery patterns
+- Dead Letter Queue handling
+- Transaction lifecycle management
+- Structured logging and observability
+- Security and validation controls
+- Service modularity and maintainability
+- Containerized application deployment
+
+---
+
+# Real-World Payment Concepts Simulated
+
+- Purchase authorization flows
+- Cash withdrawal processing
+- Balance inquiry handling
+- Reversal processing
+- Internal and external routing decisions
+- Payment network integration patterns
+- Transaction status tracking
+- Failure recovery and retry handling
+- Operational monitoring and observability
+
+---
+
 # Tech Stack
 
-### Application Layer
+## Application Layer
 
 - Node.js
 - Express.js
 - JavaScript
 
-### Data Layer
+## Data Layer
 
 - PostgreSQL
 
-### Queue & Processing Layer
+## Queue & Processing Layer
 
 - Redis
 - BullMQ
 
-### Infrastructure
+## Infrastructure
 
 - Docker
 - Docker Compose
 
-### Tooling
+## Tooling
 
 - Git
 - GitHub
@@ -148,7 +115,6 @@ PostgreSQL
 # Folder Structure
 
 ```text
-
 payment-sim/
 ├── app.js
 ├── broker/
@@ -178,13 +144,15 @@ payment-sim/
 
 ## Health Check
 
+```http
 GET /
-
----
+```
 
 ## Submit Payment
 
+```http
 POST /pay
+```
 
 ### Example Request
 
@@ -208,11 +176,11 @@ POST /pay
 }
 ```
 
----
-
 ## Check Transaction Status
 
+```http
 GET /status/:id
+```
 
 ### Example Response
 
@@ -223,11 +191,11 @@ GET /status/:id
 }
 ```
 
----
-
 ## View Dead Letter Queue
 
+```http
 GET /dead-letter
+```
 
 ---
 
@@ -235,11 +203,11 @@ GET /dead-letter
 
 ```text
 ACCEPTED
-↓
+    ↓
 PROCESSING
-↓
+    ↓
 COMPLETED / DECLINED / FAILED
-↓
+    ↓
 Dead Letter Queue (if retries exhausted)
 ```
 
@@ -261,7 +229,7 @@ Example:
 
 ```bash
 PORT=3000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/hybrid_banking
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/payment_sim
 REDIS_HOST=127.0.0.1
 ```
 
@@ -276,8 +244,6 @@ npm run test-payment
 ```
 
 ---
-
-# How To Run
 
 # Local Development
 
@@ -295,11 +261,12 @@ Run application:
 node app.js
 ```
 
-Application:
+Application URL:
 
 ```text
 http://localhost:3000
 ```
+
 ---
 
 # Docker Deployment
@@ -313,10 +280,10 @@ docker compose up --build
 Services:
 
 ```text
-Application  : localhost:3000
-PostgreSQL   : localhost:5432
-Redis        : localhost:6379
-
+Application : localhost:3000
+PostgreSQL  : localhost:5432
+Redis       : localhost:6379
+```
 
 ---
 
@@ -351,45 +318,17 @@ curl -X POST http://localhost:3000/pay \
 
 ---
 
-# Learning Outcomes
+# Key Takeaways
 
-This project demonstrates practical experience with:
+This project provided hands-on experience with:
 
-### Payment Processing Concepts
-
-- Transaction authorization flows
-- Internal vs external routing
-- Payment network integration patterns
-- Transaction lifecycle management
-- Settlement and reconciliation foundations
-
-### Distributed Systems Concepts
-
-- Asynchronous processing
+- Payment transaction processing
 - Queue-based architectures
 - Worker orchestration
-- Retry and failure recovery patterns
-- Dead Letter Queue handling
-- Event-driven processing models
-
-### Data Engineering Concepts
-
-- Transaction persistence
-- Auditability and traceability
-- Status lifecycle tracking
-- JSON-based processing timelines
-
-### Infrastructure & DevOps Concepts
-
-- Containerization with Docker
-- Multi-service orchestration with Docker Compose
-- Environment-driven configuration
-- Service dependency management
-
-### Enterprise Architecture Concepts
-
-- Separation of concerns
-- Modular service design
-- Routing engine ownership
-- Operational observability
-- Resiliency and scalability trade-offs
+- Retry and recovery mechanisms
+- Dead Letter Queue management
+- Transaction persistence and auditability
+- Service modularity and separation of concerns
+- Containerized deployments
+- Operational observability and monitoring
+- Scalability and resiliency patterns
