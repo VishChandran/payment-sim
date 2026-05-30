@@ -160,7 +160,7 @@ app.post("/pay", async (req, res) => {
       message: "Transaction accepted for processing",
     });
   } catch (error) {
-    console.error("❌ Error accepting payment:", error);
+    console.error("PAYMENT_ACCEPTANCE_ERROR:", error);
 
     return res.status(500).json({
       status: "ERROR",

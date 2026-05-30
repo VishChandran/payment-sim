@@ -52,7 +52,7 @@ const worker = new Worker(
 
   if (route === "INTERNAL") {
   finalResult = handleInternal(txn);
-} else if (route === "TSYS" || route === "MASTERCARD" || route === "EXTERNAL") {
+} else if (route === "EXTERNAL_PROCESSOR" || route === "CARD_NETWORK") {
   finalResult = handleExternal(txn);
 } else {
   finalResult = {
@@ -98,11 +98,11 @@ const worker = new Worker(
 );
 
 worker.on("completed", (job) => {
-  console.log(`✅ BullMQ job completed: ${job.id}`);
+  console.log(`BULLMQ_JOB_COMPLETED: ${job.id}`);
 });
 
 worker.on("failed", (job, err) => {
-  console.error(`❌ BullMQ job failed: ${job.id}`, err.message);
+  console.error(`BULLMQ_JOB_FAILED: ${job.id}`, err.message);
 });
 
 module.exports = worker;

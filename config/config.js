@@ -10,7 +10,7 @@ const config = {
 
   supportedIssuerTypes: ["INTERNAL", "EXTERNAL"],
 
-  supportedNetworks: ["TSYS", "MASTERCARD"],
+  supportedNetworks: ["EXTERNAL_PROCESSOR", "CARD_NETWORK"],
 
   supportedTransactionTypes: [
     "PURCHASE",

@@ -2,7 +2,7 @@ const queue = [];
 const deadLetterQueue = [];
 
 function addToQueue(txn) {
-  console.log("📥 Adding to queue:", txn.id);
+  console.log("ADDING_TO_QUEUE:", txn.id);
   queue.push(txn);
 }
 

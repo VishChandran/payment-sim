@@ -1,12 +1,12 @@
 function handleExternal(txn) {
-  console.log("🌐 External routing started");
+  console.log("EXTERNAL_ROUTING_STARTED");
 
-  if (txn.network === "TSYS") {
-    return handleTSYS(txn);
+  if (txn.network === "EXTERNAL_PROCESSOR") {
+    return handleExternalProcessor(txn);
   }
 
-  if (txn.network === "MASTERCARD") {
-    return handleMastercard(txn);
+  if (txn.network === "CARD_NETWORK") {
+    return handleCardNetwork(txn);
   }
 
   return {
@@ -15,23 +15,23 @@ function handleExternal(txn) {
   };
 }
 
-function handleTSYS(txn) {
-  console.log("🏢 Sent to TSYS");
+function handleExternalProcessor(txn) {
+  console.log("SENT_TO_EXTERNAL_PROCESSOR");
 
   return {
     status: "SUCCESS",
-    system: "TSYS",
-    details: "Processed by TSYS external processor"
+    system: "EXTERNAL_PROCESSOR",
+    details: "Processed by external issuer processor"
   };
 }
 
-function handleMastercard(txn) {
-  console.log("💳 Sent to Mastercard network");
+function handleCardNetwork(txn) {
+  console.log("SENT_TO_CARD_NETWORK");
 
   return {
     status: "SUCCESS",
-    system: "MASTERCARD_NETWORK",
-    details: "Routed through Mastercard network to issuer"
+    system: "CARD_NETWORK",
+    details: "Routed through card network to issuer"
   };
 }
 

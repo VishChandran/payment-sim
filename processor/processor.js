@@ -1,5 +1,5 @@
 function processTransaction(txn) {
-  console.log("⚙️ Processing txn:", txn.id);
+  console.log("PROCESSING_TXN:", txn.id);
 
  if (
   txn.transactionType !== "BALANCE_INQUIRY" &&

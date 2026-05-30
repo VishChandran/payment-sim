@@ -36,7 +36,7 @@ if (txn.issuerType === "EXTERNAL" && !txn.network) {
 }
 
 if (txn.issuerType === "EXTERNAL" && !config.supportedNetworks.includes(txn.network).includes(txn.network)) {
-  return { valid: false, reason: "Network must be TSYS or MASTERCARD" };
+  return { valid: false, reason: "Network must be EXTERNAL_PROCESSOR or CARD_NETWORK" };
 }
 if (!txn.channel) {
   return { valid: false, reason: "Channel is required" };
