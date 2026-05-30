@@ -87,6 +87,3 @@ docker compose up --build
 - Persistence abstraction
 - Centralized routing
 - Containerized deployment
-```
-
-
