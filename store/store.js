@@ -6,6 +6,8 @@ async function saveTransaction(txn) {
     (
       txn_id,
       correlation_id,
+      idempotency_key,
+      request_hash,
       amount,
       channel,
       card_number,
@@ -16,7 +18,7 @@ async function saveTransaction(txn) {
       retry_count,
       processing_timeline
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     ON CONFLICT (txn_id) DO NOTHING
     RETURNING *;
   `;
@@ -24,6 +26,8 @@ async function saveTransaction(txn) {
   const values = [
     txn.id,
     txn.correlationId || "N/A",
+    txn.idempotencyKey || null,
+    txn.requestHash || null,
     txn.amount,
     txn.channel,
     txn.cardNumber || null,
@@ -32,10 +36,21 @@ async function saveTransaction(txn) {
     txn.toAccount || null,
     txn.type || null,
     txn.retryCount || 0,
-    JSON.stringify(txn.processingTimeline || [])
+    JSON.stringify(txn.processingTimeline || []),
   ];
 
   const result = await pool.query(query, values);
+  return result.rows[0];
+}
+
+async function findTransactionByIdempotencyKey(idempotencyKey) {
+  const query = `
+    SELECT *
+    FROM transactions
+    WHERE idempotency_key = $1;
+  `;
+
+  const result = await pool.query(query, [idempotencyKey]);
   return result.rows[0];
 }
 
@@ -63,7 +78,7 @@ async function updateTransaction(id, updates) {
     updates.reason || null,
     updates.result ? JSON.stringify(updates.result) : null,
     updates.processingTimeline ? JSON.stringify(updates.processingTimeline) : null,
-    id
+    id,
   ];
 
   const result = await pool.query(query, values);
@@ -84,5 +99,6 @@ async function getTransaction(id) {
 module.exports = {
   saveTransaction,
   updateTransaction,
-  getTransaction
+  getTransaction,
+  findTransactionByIdempotencyKey,
 };

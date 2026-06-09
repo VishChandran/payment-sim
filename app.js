@@ -18,6 +18,7 @@ const { logEvent } = require("./logger/logger");
 const {
   saveTransaction,
   getTransaction,
+  findTransactionByIdempotencyKey,
 } = require("./store/store");
 
 const { getDeadLetterQueue } = require("./queue/queue");
@@ -92,6 +93,36 @@ app.get("/dead-letter", (req, res) => {
 app.post("/pay", apiKeyAuth, async (req, res) => {
   try {
     const txn = req.body;
+    const idempotencyKey = req.header("x-idempotency-key");
+
+if (!idempotencyKey) {
+  return res.status(400).json({
+    status: "DECLINED",
+    reason: "Missing x-idempotency-key header",
+  });
+}
+
+const requestHash = crypto
+  .createHash("sha256")
+  .update(JSON.stringify(txn))
+  .digest("hex");
+
+const existingTxn = await findTransactionByIdempotencyKey(idempotencyKey);
+
+if (existingTxn) {
+  if (existingTxn.request_hash !== requestHash) {
+    return res.status(409).json({
+      status: "REJECTED",
+      reason: "Idempotency key already used with different request payload",
+    });
+  }
+
+  return res.status(200).json({
+    status: existingTxn.status,
+    transactionId: existingTxn.txn_id,
+    message: "Duplicate request detected. Returning original transaction.",
+  });
+}
 
     logEvent("api", "RAW_TRANSACTION_RECEIVED", "N/A", maskSensitiveData(txn));
 
@@ -140,6 +171,8 @@ if (missingFields.length > 0) {
 
     const fullTxn = {
       id: txnId,
+      idempotencyKey,
+      requestHash,
       ...txn,
       status: "ACCEPTED",
       retryCount: 0,
