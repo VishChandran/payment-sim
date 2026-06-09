@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const helmet = require("helmet");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
+const { apiKeyAuth } = require("./middleware/apiKeyAuth");
 
 const app = express();
 
@@ -67,7 +68,7 @@ app.get("/info", (req, res) => {
   });
 });
 
-app.get("/status/:id", async (req, res) => {
+app.get("/status/:id", apiKeyAuth, async (req, res) => {
   const txnId = req.params.id;
 
   const txn = await getTransaction(txnId);
@@ -88,18 +89,28 @@ app.get("/dead-letter", (req, res) => {
   });
 });
 
-app.post("/pay", async (req, res) => {
+app.post("/pay", apiKeyAuth, async (req, res) => {
   try {
     const txn = req.body;
 
     logEvent("api", "RAW_TRANSACTION_RECEIVED", "N/A", maskSensitiveData(txn));
 
-    if (!txn.amount || !txn.fromAccount || !txn.toAccount || !txn.type) {
-      return res.status(400).json({
-        status: "DECLINED",
-        reason: "Missing required transaction fields",
-      });
-    }
+    const requiredFields = [
+  "amount",
+  "fromAccount",
+  "toAccount",
+  "type",
+  "channel",
+];
+
+const missingFields = requiredFields.filter((field) => !txn[field]);
+
+if (missingFields.length > 0) {
+  return res.status(400).json({
+    status: "DECLINED",
+    reason: `Missing required fields: ${missingFields.join(", ")}`,
+  });
+}
 
     if (txn.amount <= 0) {
       return res.status(400).json({
