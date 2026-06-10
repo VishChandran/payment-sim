@@ -87,3 +87,27 @@ docker compose up --build
 - Persistence abstraction
 - Centralized routing
 - Containerized deployment
+
+## Architecture Review Enhancements
+
+This project was initially built to simulate a payment processing platform covering transaction validation, routing, asynchronous processing, retries, dead-letter handling, and PostgreSQL persistence.
+
+Following an architecture review, several production-readiness improvements were implemented:
+
+### API Authentication
+Added API Key based authentication to prevent anonymous access to payment APIs and transaction status endpoints.
+
+### Idempotency Controls
+Implemented idempotency keys and request hashing to prevent duplicate payment processing during client retries and network failures.
+
+### Outbox Pattern
+Implemented the Outbox Pattern to ensure transaction events are persisted before being published for asynchronous processing. This prevents transaction loss in scenarios where database writes succeed but message publication fails.
+
+### Input Validation Improvements
+Enhanced request validation to ensure mandatory transaction attributes are validated before persistence and processing.
+
+### Why These Enhancements Were Added
+
+The initial version of the project focused on understanding payment processing flows, routing decisions, asynchronous workers, retries, and transaction lifecycle management.
+
+As the project evolved, additional architecture reviews were performed to identify production-grade resiliency, security, and consistency improvements commonly found in enterprise payment systems. The enhancements above were added as part of that review process.
