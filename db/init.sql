@@ -1,4 +1,3 @@
-cat > db/init.sql <<'EOF'
 CREATE TABLE IF NOT EXISTS transactions (
   id SERIAL PRIMARY KEY,
   txn_id VARCHAR(50) UNIQUE NOT NULL,
@@ -21,8 +20,15 @@ CREATE TABLE IF NOT EXISTS transactions (
   result JSONB,
   processing_timeline JSONB
 );
-EOF
 
-psql "$DATABASE_URL" -c "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(100);"
-psql "$DATABASE_URL" -c "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS request_hash VARCHAR(128);"
-psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_idempotency_key ON transactions(idempotency_key) WHERE idempotency_key IS NOT NULL;"
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id SERIAL PRIMARY KEY,
+  txn_id VARCHAR(50) UNIQUE NOT NULL,
+  event_type VARCHAR(50) NOT NULL,
+  payload JSONB NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

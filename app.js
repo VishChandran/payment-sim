@@ -9,6 +9,7 @@ const app = express();
 
 const { transactionQueue } = require("./jobs/transactionQueue");
 require("./jobs/transactionWorker");
+require("./outbox/outboxProcessor");
 
 const { config } = require("./config/config");
 const { evaluateRisk } = require("./risk/riskEngine");
@@ -19,6 +20,7 @@ const {
   saveTransaction,
   getTransaction,
   findTransactionByIdempotencyKey,
+  createOutboxEvent,
 } = require("./store/store");
 
 const { getDeadLetterQueue } = require("./queue/queue");
@@ -196,7 +198,7 @@ if (missingFields.length > 0) {
 
     await saveTransaction(fullTxn);
 
-    await transactionQueue.add("process-transaction", fullTxn);
+   await createOutboxEvent(fullTxn);
 
     return res.status(202).json({
       status: "ACCEPTED",

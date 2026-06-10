@@ -54,6 +54,31 @@ async function findTransactionByIdempotencyKey(idempotencyKey) {
   return result.rows[0];
 }
 
+async function createOutboxEvent(txn) {
+  const query = `
+    INSERT INTO outbox_events
+    (
+      txn_id,
+      event_type,
+      payload,
+      status
+    )
+    VALUES ($1,$2,$3,$4)
+    ON CONFLICT (txn_id) DO NOTHING
+    RETURNING *;
+  `;
+
+  const values = [
+    txn.id,
+    "TRANSACTION_ACCEPTED",
+    JSON.stringify(txn),
+    "PENDING",
+  ];
+
+  const result = await pool.query(query, values);
+  return result.rows[0];
+}
+
 async function updateTransaction(id, updates) {
   const query = `
     UPDATE transactions
@@ -101,4 +126,5 @@ module.exports = {
   updateTransaction,
   getTransaction,
   findTransactionByIdempotencyKey,
+  createOutboxEvent,
 };
