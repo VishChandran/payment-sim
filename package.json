@@ -12,7 +12,8 @@
     "test-reliability": "node tests/reliabilityTest.js",
     "test-transaction-recovery": "node tests/transactionRecoveryTest.js",
     "test-auth": "node tests/apiKeyAuthTest.js",
-    "test-cors": "node tests/corsConfigTest.js"
+    "test-cors": "node tests/corsConfigTest.js",
+    "test-status-auth": "node tests/statusAuthorizationTest.js"
   },
   "keywords": [],
   "author": "",

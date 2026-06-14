@@ -4,11 +4,32 @@ const DEV_API_KEY = "dev-api-key";
 const DEV_ADMIN_API_KEY = "dev-admin-api-key";
 
 function parseApiKeys(env = process.env) {
-  return parseKeys(["API_KEYS", "API_KEY"], env);
+  return parseApiCredentials(env).map((credential) => credential.key);
 }
 
 function parseAdminApiKeys(env = process.env) {
   return parseKeys(["ADMIN_API_KEYS", "ADMIN_API_KEY"], env);
+}
+
+function parseApiCredentials(env = process.env) {
+  const defaultClientId = env.API_CLIENT_ID || env.CLIENT_ID || "default-client";
+  const keys = parseKeys(["API_KEYS", "API_KEY"], env);
+
+  return keys.map((entry) => {
+    const separatorIndex = entry.indexOf(":");
+
+    if (separatorIndex === -1) {
+      return {
+        clientId: defaultClientId,
+        key: entry,
+      };
+    }
+
+    return {
+      clientId: entry.slice(0, separatorIndex).trim() || defaultClientId,
+      key: entry.slice(separatorIndex + 1).trim(),
+    };
+  }).filter((credential) => credential.key);
 }
 
 function parseKeys(names, env = process.env) {
@@ -31,10 +52,14 @@ function parseKeys(names, env = process.env) {
 }
 
 function getConfiguredApiKeys(env = process.env) {
-  const configuredKeys = parseApiKeys(env);
+  return getConfiguredApiCredentials(env).map((credential) => credential.key);
+}
 
-  if (configuredKeys.length > 0) {
-    return configuredKeys;
+function getConfiguredApiCredentials(env = process.env) {
+  const configuredCredentials = parseApiCredentials(env);
+
+  if (configuredCredentials.length > 0) {
+    return configuredCredentials;
   }
 
   if (env.NODE_ENV === "production") {
@@ -44,7 +69,12 @@ function getConfiguredApiKeys(env = process.env) {
   console.warn(
     "WARNING: API_KEY/API_KEYS is not set. Using development API key. Do not use this in production."
   );
-  return [DEV_API_KEY];
+  return [
+    {
+      clientId: "development-client",
+      key: DEV_API_KEY,
+    },
+  ];
 }
 
 function getConfiguredAdminApiKeys(env = process.env) {
@@ -95,14 +125,28 @@ function constantTimeEquals(a, b) {
   return crypto.timingSafeEqual(aBuffer, bBuffer);
 }
 
-function isValidApiKey(providedKey, configuredKeys = getConfiguredApiKeys()) {
+function authenticateApiKey(
+  providedKey,
+  configuredCredentials = getConfiguredApiCredentials()
+) {
   if (!providedKey) {
-    return false;
+    return null;
   }
 
-  return configuredKeys.some((configuredKey) =>
-    constantTimeEquals(providedKey, configuredKey)
+  return (
+    configuredCredentials.find((credential) =>
+      constantTimeEquals(providedKey, credential.key)
+    ) || null
   );
+}
+
+function isValidApiKey(providedKey, configuredKeys = getConfiguredApiKeys()) {
+  const credentials = configuredKeys.map((key) => ({
+    clientId: "unknown",
+    key,
+  }));
+
+  return Boolean(authenticateApiKey(providedKey, credentials));
 }
 
 function isValidAdminApiKey(
@@ -120,13 +164,19 @@ function isValidAdminApiKey(
 
 function apiKeyAuth(req, res, next) {
   const providedKey = req.header("x-api-key");
+  const credential = authenticateApiKey(providedKey);
 
-  if (!isValidApiKey(providedKey)) {
+  if (!credential) {
     return res.status(401).json({
       status: "REJECTED",
       reason: "Unauthorized API request",
     });
   }
+
+  req.auth = {
+    type: "client",
+    clientId: credential.clientId,
+  };
 
   next();
 }
@@ -144,15 +194,32 @@ function adminApiKeyAuth(req, res, next) {
   next();
 }
 
+function apiKeyOrAdminAuth(req, res, next) {
+  const providedAdminKey = req.header("x-admin-api-key");
+
+  if (providedAdminKey && isValidAdminApiKey(providedAdminKey)) {
+    req.auth = {
+      type: "admin",
+    };
+    return next();
+  }
+
+  return apiKeyAuth(req, res, next);
+}
+
 module.exports = {
   DEV_ADMIN_API_KEY,
   DEV_API_KEY,
   adminApiKeyAuth,
+  apiKeyOrAdminAuth,
   apiKeyAuth,
+  authenticateApiKey,
+  getConfiguredApiCredentials,
   getConfiguredAdminApiKeys,
   getConfiguredApiKeys,
   isValidAdminApiKey,
   isValidApiKey,
+  parseApiCredentials,
   parseAdminApiKeys,
   parseApiKeys,
   validateAdminApiKeyConfiguration,

@@ -38,6 +38,7 @@ async function saveTransactionWithOutbox(txn) {
         correlation_id,
         idempotency_key,
         request_hash,
+        client_id,
         amount,
         channel,
         card_number,
@@ -48,7 +49,7 @@ async function saveTransactionWithOutbox(txn) {
         retry_count,
         processing_timeline
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING *;
     `;
@@ -58,6 +59,7 @@ async function saveTransactionWithOutbox(txn) {
       txn.correlationId || "N/A",
       txn.idempotencyKey || null,
       txn.requestHash || null,
+      txn.clientId || null,
       txn.amount,
       txn.channel,
       txn.cardNumber || null,

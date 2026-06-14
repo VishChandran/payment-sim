@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   id SERIAL PRIMARY KEY,
   txn_id VARCHAR(50) UNIQUE NOT NULL,
   correlation_id VARCHAR(100) NOT NULL,
+  client_id VARCHAR(100),
   idempotency_key VARCHAR(100) UNIQUE,
   request_hash VARCHAR(128),
   amount NUMERIC(12,2) NOT NULL,

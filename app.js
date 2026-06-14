@@ -3,8 +3,13 @@ const crypto = require("crypto");
 const helmet = require("helmet");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const { adminApiKeyAuth, apiKeyAuth } = require("./middleware/apiKeyAuth");
+const {
+  adminApiKeyAuth,
+  apiKeyAuth,
+  apiKeyOrAdminAuth,
+} = require("./middleware/apiKeyAuth");
 const { buildCorsOptions } = require("./middleware/corsConfig");
+const { canAccessTransactionStatus } = require("./middleware/statusAuthorization");
 
 const app = express();
 
@@ -65,7 +70,7 @@ app.get("/info", adminApiKeyAuth, (req, res) => {
   });
 });
 
-app.get("/status/:id", apiKeyAuth, async (req, res) => {
+app.get("/status/:id", apiKeyOrAdminAuth, async (req, res) => {
   const txnId = req.params.id;
 
   const txn = await getTransaction(txnId);
@@ -73,6 +78,13 @@ app.get("/status/:id", apiKeyAuth, async (req, res) => {
   if (!txn) {
     return res.status(404).json({
       error: "Transaction not found",
+    });
+  }
+
+  if (!canAccessTransactionStatus(req.auth, txn)) {
+    return res.status(403).json({
+      status: "REJECTED",
+      reason: "Forbidden transaction access",
     });
   }
 
@@ -146,6 +158,7 @@ const requestHash = crypto
 
     const fullTxn = {
       id: txnId,
+      clientId: req.auth.clientId,
       idempotencyKey,
       requestHash,
       ...validatedTxn,
