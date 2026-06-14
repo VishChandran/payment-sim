@@ -1,7 +1,11 @@
 const {
+  DEV_ADMIN_API_KEY,
   DEV_API_KEY,
+  getConfiguredAdminApiKeys,
   getConfiguredApiKeys,
+  isValidAdminApiKey,
   isValidApiKey,
+  validateAdminApiKeyConfiguration,
   validateApiKeyConfiguration,
 } = require("../middleware/apiKeyAuth");
 
@@ -59,11 +63,66 @@ function testDevelopmentFallbackWarningKey() {
   console.log("PASS development fallback key remains usable");
 }
 
+function testMissingProductionAdminApiKeyFailsStartup() {
+  let threw = false;
+
+  try {
+    validateAdminApiKeyConfiguration({
+      NODE_ENV: "production",
+      ADMIN_ENDPOINTS_ENABLED: "true",
+    });
+  } catch (error) {
+    threw = true;
+    assert(
+      error.message.includes("ADMIN_API_KEY or ADMIN_API_KEYS must be set"),
+      "expected clear missing production admin API key error"
+    );
+  }
+
+  assert(threw, "expected production admin config validation to throw without admin API keys");
+  console.log("PASS missing production admin API key fails startup validation");
+}
+
+function testValidAdminApiKeySucceeds() {
+  const keys = getConfiguredAdminApiKeys({
+    NODE_ENV: "production",
+    ADMIN_API_KEYS: "admin-primary, admin-rotated",
+  });
+
+  assert(isValidAdminApiKey("admin-primary", keys), "expected primary admin key to be valid");
+  assert(isValidAdminApiKey("admin-rotated", keys), "expected rotated admin key to be valid");
+  console.log("PASS valid admin API key succeeds");
+}
+
+function testInvalidAdminApiKeyFails() {
+  const keys = getConfiguredAdminApiKeys({
+    NODE_ENV: "production",
+    ADMIN_API_KEYS: "admin-primary, admin-rotated",
+  });
+
+  assert(!isValidAdminApiKey("wrong-admin-key", keys), "expected wrong admin key to fail");
+  assert(!isValidAdminApiKey("", keys), "expected empty admin key to fail");
+  assert(!isValidAdminApiKey(undefined, keys), "expected missing admin key to fail");
+  console.log("PASS invalid admin API key fails");
+}
+
+function testDevelopmentAdminFallbackWarningKey() {
+  const keys = getConfiguredAdminApiKeys({ NODE_ENV: "development" });
+
+  assert(keys.length === 1, "expected one development admin fallback key");
+  assert(keys[0] === DEV_ADMIN_API_KEY, "expected development admin fallback key");
+  console.log("PASS development admin fallback key remains usable");
+}
+
 function main() {
   testMissingProductionApiKeyFailsStartup();
   testValidApiKeySucceeds();
   testInvalidApiKeyFails();
   testDevelopmentFallbackWarningKey();
+  testMissingProductionAdminApiKeyFailsStartup();
+  testValidAdminApiKeySucceeds();
+  testInvalidAdminApiKeyFails();
+  testDevelopmentAdminFallbackWarningKey();
 }
 
 try {

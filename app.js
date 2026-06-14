@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const helmet = require("helmet");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const { apiKeyAuth } = require("./middleware/apiKeyAuth");
+const { adminApiKeyAuth, apiKeyAuth } = require("./middleware/apiKeyAuth");
 
 const app = express();
 
@@ -45,7 +45,7 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/info", (req, res) => {
+app.get("/info", adminApiKeyAuth, (req, res) => {
   res.json({
     service: "payment-sim",
     architecture: "BullMQ-backed async payment processing simulator",
@@ -78,7 +78,7 @@ app.get("/status/:id", apiKeyAuth, async (req, res) => {
   return res.json(txn);
 });
 
-app.get("/dead-letter", (req, res) => {
+app.get("/dead-letter", adminApiKeyAuth, (req, res) => {
   getDeadLetterJobs()
     .then((jobs) => {
       res.json({
