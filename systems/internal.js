@@ -5,7 +5,7 @@ function handleInternal(txn) {
   console.log("🏦 Internal system processing");
 
   // Balance inquiry skips PIN
-  if (txn.transactionType === "BALANCE_INQUIRY") {
+  if (txn.type === "BALANCE_INQUIRY") {
     return validateBalance(txn);
   }
 
@@ -22,11 +22,11 @@ function handleInternal(txn) {
   }
 
   // Special transaction types
-  if (txn.transactionType === "REVERSAL") {
+  if (txn.type === "REVERSAL") {
     return balanceResult;
   }
 
-  if (txn.transactionType === "CASH_WITHDRAWAL") {
+  if (txn.type === "CASH_WITHDRAWAL") {
     return {
       status: "SUCCESS",
       system: "ATM_CASH_SYSTEM",

@@ -4,9 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "node app.js",
-    "test-payment": "node tests/paymentTest.js"
+    "start": "node api.js",
+    "dev": "node api.js",
+    "worker": "node worker.js",
+    "outbox": "node outbox.js",
+    "test-payment": "node tests/paymentTest.js",
+    "test-reliability": "node tests/reliabilityTest.js",
+    "test-transaction-recovery": "node tests/transactionRecoveryTest.js"
   },
   "keywords": [],
   "author": "",

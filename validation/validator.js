@@ -1,60 +1,64 @@
 const { config } = require("../config/config");
+
 function validateTransaction(txn) {
-  if (txn.amount === undefined || txn.amount === null) {
-  return { valid: false, reason: "Amount is required" };
-}
-if (txn.transactionType !== "BALANCE_INQUIRY" && txn.amount <= 0) {
-  return { valid: false, reason: "Amount must be greater than 0" };
-}
+  const requiredFields = ["amount", "fromAccount", "toAccount", "type", "channel", "issuerType"];
+  const missingFields = requiredFields.filter(
+    (field) => txn[field] === undefined || txn[field] === null || txn[field] === ""
+  );
 
-  if (!txn.bank) {
-    return { valid: false, reason: "Bank is required" };
+  if (missingFields.length > 0) {
+    return {
+      valid: false,
+      reason: `Missing required fields: ${missingFields.join(", ")}`,
+    };
   }
 
-  if (!txn.cardNumber) {
-    return { valid: false, reason: "Card number is required" };
+  if (!Number.isFinite(Number(txn.amount))) {
+    return { valid: false, reason: "Amount must be a number" };
   }
 
-  if (txn.cardNumber.length < 4) {
-    return { valid: false, reason: "Card number is too short" };
+  const amount = Number(txn.amount);
+
+  if (txn.type !== "BALANCE_INQUIRY" && amount <= 0) {
+    return { valid: false, reason: "Amount must be greater than 0" };
   }
 
-  if (txn.amount > config.transactionLimit) {
+  if (amount > config.transactionLimit) {
     return { valid: false, reason: "Amount exceeds transaction limit" };
   }
 
-  if (!txn.issuerType) {
-  return { valid: false, reason: "Issuer type is required" };
-}
+  if (!config.supportedTransactionTypes.includes(txn.type)) {
+    return { valid: false, reason: "Invalid transaction type" };
+  }
 
-if (!config.supportedIssuerTypes.includes(txn.issuerType)) {
-  return { valid: false, reason: "Issuer type must be INTERNAL or EXTERNAL" };
-}
+  if (!config.supportedIssuerTypes.includes(txn.issuerType)) {
+    return { valid: false, reason: "Issuer type must be INTERNAL or EXTERNAL" };
+  }
 
-if (txn.issuerType === "EXTERNAL" && !txn.network) {
-  return { valid: false, reason: "Network is required for external issuer" };
-}
+  if (!config.supportedChannels.includes(txn.channel)) {
+    return { valid: false, reason: "Invalid channel" };
+  }
 
-if (txn.issuerType === "EXTERNAL" && !config.supportedNetworks.includes(txn.network).includes(txn.network)) {
-  return { valid: false, reason: "Network must be EXTERNAL_PROCESSOR or CARD_NETWORK" };
-}
-if (!txn.channel) {
-  return { valid: false, reason: "Channel is required" };
-}
+  if (txn.issuerType === "EXTERNAL" && !txn.network) {
+    return { valid: false, reason: "Network is required for external issuer" };
+  }
 
-const allowedChannels = [
-  "DOMESTIC_ATM",
-  "INTERNATIONAL_ATM",
-  "DOMESTIC_POS",
-  "INTERNATIONAL_POS",
-  "ECOM"
-];
+  if (txn.network && !config.supportedNetworks.includes(txn.network)) {
+    return { valid: false, reason: "Network must be EXTERNAL_PROCESSOR or CARD_NETWORK" };
+  }
 
-if (!allowedChannels.includes(txn.channel)) {
-  return { valid: false, reason: "Invalid channel" };
-}
+  if (txn.cardNumber && String(txn.cardNumber).length < 4) {
+    return { valid: false, reason: "Card number is too short" };
+  }
 
-  return { valid: true };
+  return {
+    valid: true,
+    transaction: {
+      ...txn,
+      amount,
+      type: txn.type,
+    },
+  };
 }
 
 module.exports = { validateTransaction };

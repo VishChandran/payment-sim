@@ -2,7 +2,7 @@ function processTransaction(txn) {
   console.log("PROCESSING_TXN:", txn.id);
 
  if (
-  txn.transactionType !== "BALANCE_INQUIRY" &&
+  txn.type !== "BALANCE_INQUIRY" &&
   (!txn.amount || txn.amount <= 0)
 ) {
 

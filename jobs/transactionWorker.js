@@ -1,96 +1,13 @@
 const { Worker } = require("bullmq");
 const { connection } = require("./transactionQueue");
 
-const { config } = require("../config/config");
-const { logEvent } = require("../logger/logger");
-const { routeTransaction } = require("../broker/router");
-const { processTransaction } = require("../processor/processor");
-const { handleInternal } = require("../systems/internal");
-const { handleExternal } = require("../systems/external");
-const { updateTransaction } = require("../store/store");
-const { addToDeadLetterQueue } = require("../queue/queue");
+const { saveDeadLetterJob, updateTransaction } = require("../store/store");
+const { handleTransactionJob } = require("./transactionJobHandler");
 
 const worker = new Worker(
   "transaction-processing",
   async (job) => {
-    const txn = job.data;
-    const workerId = "bullmq-worker";
-
-    logEvent("worker", "PROCESSING_STARTED", txn.id, {
-      workerId,
-      jobId: job.id,
-    });
-
-    await updateTransaction(txn.id, {
-      status: "PROCESSING",
-      workerId: 1,
-      processingTimeline: [
-        ...(txn.processingTimeline || []),
-        {
-          status: "PROCESSING",
-          timestamp: new Date().toISOString(),
-          message: "BullMQ worker started processing",
-        },
-      ],
-    });
-
-    const result = processTransaction(txn);
-
-    if (result.status === "DECLINED") {
-      await updateTransaction(txn.id, {
-        status: "DECLINED",
-        reason: result.reason,
-        workerId: 1,
-      });
-
-      return;
-    }
-
-    const route = routeTransaction(txn);
-
-    let finalResult;
-
-  if (route === "INTERNAL") {
-  finalResult = handleInternal(txn);
-} else if (route === "EXTERNAL_PROCESSOR" || route === "CARD_NETWORK") {
-  finalResult = handleExternal(txn);
-} else {
-  finalResult = {
-    status: "DECLINED",
-    reason: "Unsupported route"
-  };
-}
-
-    if (finalResult.status === "DECLINED") {
-      await updateTransaction(txn.id, {
-        status: "DECLINED",
-        route,
-        reason: finalResult.reason,
-        workerId: 1,
-      });
-
-      return;
-    }
-
-    await updateTransaction(txn.id, {
-      status: "COMPLETED",
-      route,
-      result: finalResult,
-      workerId: 1,
-      processingTimeline: [
-        ...(txn.processingTimeline || []),
-        {
-          status: "PROCESSING",
-          timestamp: new Date().toISOString(),
-          message: "BullMQ worker processed transaction",
-        },
-        {
-          status: "COMPLETED",
-          timestamp: new Date().toISOString(),
-          message: "Transaction processed successfully",
-        },
-      ],
-    });
+    await handleTransactionJob(job, "bullmq-worker");
   },
   {
     connection,
@@ -101,8 +18,45 @@ worker.on("completed", (job) => {
   console.log(`BULLMQ_JOB_COMPLETED: ${job.id}`);
 });
 
-worker.on("failed", (job, err) => {
+worker.on("failed", async (job, err) => {
+  if (!job) {
+    console.error("BULLMQ_JOB_FAILED_WITHOUT_JOB:", err.message);
+    return;
+  }
+
   console.error(`BULLMQ_JOB_FAILED: ${job.id}`, err.message);
+
+  const maxAttempts = job.opts.attempts || 1;
+
+  if (job.attemptsMade < maxAttempts) {
+    if (job.data && job.data.id) {
+      await updateTransaction(job.data.id, {
+        status: "ACCEPTED",
+        reason: err.message,
+        retryCount: job.attemptsMade,
+        clearProcessing: true,
+      });
+    }
+
+    return;
+  }
+
+  try {
+    await saveDeadLetterJob(job, err);
+
+    if (job.data && job.data.id) {
+      await updateTransaction(job.data.id, {
+        status: "FAILED",
+        reason: err.message,
+        retryCount: job.attemptsMade,
+        clearProcessing: true,
+      });
+    }
+
+    console.error(`BULLMQ_JOB_DEAD_LETTERED: ${job.id}`);
+  } catch (saveError) {
+    console.error(`BULLMQ_DLQ_SAVE_FAILED: ${job.id}`, saveError.message);
+  }
 });
 
 module.exports = worker;

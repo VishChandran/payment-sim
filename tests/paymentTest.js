@@ -5,6 +5,7 @@ const data = JSON.stringify({
   fromAccount: "A123",
   toAccount: "B456",
   type: "PURCHASE",
+  channel: "DOMESTIC_POS",
   issuerType: "INTERNAL",
   pin: "1234",
 });
@@ -17,6 +18,8 @@ const options = {
   headers: {
     "Content-Type": "application/json",
     "Content-Length": data.length,
+    "x-api-key": process.env.API_KEY || "dev-api-key",
+    "x-idempotency-key": `test-${Date.now()}`,
   },
 };
 

@@ -7,23 +7,16 @@ const { apiKeyAuth } = require("./middleware/apiKeyAuth");
 
 const app = express();
 
-const { transactionQueue } = require("./jobs/transactionQueue");
-require("./jobs/transactionWorker");
-require("./outbox/outboxProcessor");
-
-const { config } = require("./config/config");
 const { evaluateRisk } = require("./risk/riskEngine");
 const { maskSensitiveData } = require("./utils/mask");
 const { logEvent } = require("./logger/logger");
+const { validateTransaction } = require("./validation/validator");
 
 const {
-  saveTransaction,
+  saveTransactionWithOutbox,
   getTransaction,
-  findTransactionByIdempotencyKey,
-  createOutboxEvent,
+  getDeadLetterJobs,
 } = require("./store/store");
-
-const { getDeadLetterQueue } = require("./queue/queue");
 
 console.log("APP STARTING...");
 
@@ -86,10 +79,20 @@ app.get("/status/:id", apiKeyAuth, async (req, res) => {
 });
 
 app.get("/dead-letter", (req, res) => {
-  res.json({
-    count: getDeadLetterQueue().length,
-    transactions: getDeadLetterQueue(),
-  });
+  getDeadLetterJobs()
+    .then((jobs) => {
+      res.json({
+        count: jobs.length,
+        jobs,
+      });
+    })
+    .catch((error) => {
+      console.error("DEAD_LETTER_FETCH_ERROR:", error);
+      res.status(500).json({
+        status: "ERROR",
+        reason: "Unable to fetch dead-letter jobs",
+      });
+    });
 });
 
 app.post("/pay", apiKeyAuth, async (req, res) => {
@@ -109,50 +112,19 @@ const requestHash = crypto
   .update(JSON.stringify(txn))
   .digest("hex");
 
-const existingTxn = await findTransactionByIdempotencyKey(idempotencyKey);
-
-if (existingTxn) {
-  if (existingTxn.request_hash !== requestHash) {
-    return res.status(409).json({
-      status: "REJECTED",
-      reason: "Idempotency key already used with different request payload",
-    });
-  }
-
-  return res.status(200).json({
-    status: existingTxn.status,
-    transactionId: existingTxn.txn_id,
-    message: "Duplicate request detected. Returning original transaction.",
-  });
-}
-
     logEvent("api", "RAW_TRANSACTION_RECEIVED", "N/A", maskSensitiveData(txn));
 
-    const requiredFields = [
-  "amount",
-  "fromAccount",
-  "toAccount",
-  "type",
-  "channel",
-];
+    const validation = validateTransaction(txn);
 
-const missingFields = requiredFields.filter((field) => !txn[field]);
-
-if (missingFields.length > 0) {
-  return res.status(400).json({
-    status: "DECLINED",
-    reason: `Missing required fields: ${missingFields.join(", ")}`,
-  });
-}
-
-    if (txn.amount <= 0) {
+    if (!validation.valid) {
       return res.status(400).json({
         status: "DECLINED",
-        reason: "Amount must be greater than 0",
+        reason: validation.reason,
       });
     }
 
-    const risk = evaluateRisk(txn);
+    const validatedTxn = validation.transaction;
+    const risk = evaluateRisk(validatedTxn);
 
     if (risk.decision === "REJECT") {
       return res.status(403).json({
@@ -175,7 +147,7 @@ if (missingFields.length > 0) {
       id: txnId,
       idempotencyKey,
       requestHash,
-      ...txn,
+      ...validatedTxn,
       status: "ACCEPTED",
       retryCount: 0,
       createdAt: now,
@@ -196,9 +168,22 @@ if (missingFields.length > 0) {
       maskSensitiveData(fullTxn)
     );
 
-    await saveTransaction(fullTxn);
+    const saveResult = await saveTransactionWithOutbox(fullTxn);
 
-   await createOutboxEvent(fullTxn);
+    if (!saveResult.inserted) {
+      if (saveResult.conflict) {
+        return res.status(409).json({
+          status: "REJECTED",
+          reason: "Idempotency key already used with different request payload",
+        });
+      }
+
+      return res.status(200).json({
+        status: saveResult.transaction.status,
+        transactionId: saveResult.transaction.txn_id,
+        message: "Duplicate request detected. Returning original transaction.",
+      });
+    }
 
     return res.status(202).json({
       status: "ACCEPTED",
@@ -215,11 +200,4 @@ if (missingFields.length > 0) {
   }
 });
 
-/* SERVER START */
-
-console.log("PORT FROM ENV:", process.env.PORT);
-console.log("CONFIG PORT:", config.port);
-
-app.listen(config.port, () => {
-  console.log(`Server running on http://localhost:${config.port}`);
-});
+module.exports = { app };

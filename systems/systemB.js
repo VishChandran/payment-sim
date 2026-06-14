@@ -2,7 +2,7 @@ const { config } = require("../config/config");
 function validateBalance(txn) {
   console.log("💰 System B - Checking balance");
 
-  if (txn.transactionType === "BALANCE_INQUIRY") {
+  if (txn.type === "BALANCE_INQUIRY") {
     return {
       status: "SUCCESS",
       system: "BALANCE_SYSTEM",
@@ -10,7 +10,7 @@ function validateBalance(txn) {
     };
   }
 
-  if (txn.transactionType === "REVERSAL") {
+  if (txn.type === "REVERSAL") {
     return {
       status: "SUCCESS",
       system: "REVERSAL_SYSTEM",

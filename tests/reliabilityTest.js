@@ -1,0 +1,367 @@
+const crypto = require("crypto");
+const pool = require("../db/connection");
+const {
+  claimOutboxEvents,
+  recoverStaleOutboxEvents,
+} = require("../outbox/outboxProcessor");
+const { transactionQueue } = require("../jobs/transactionQueue");
+const { handleTransactionJob } = require("../jobs/transactionJobHandler");
+const {
+  getTransaction,
+  recoverStaleProcessingTransactions,
+  saveTransactionWithOutbox,
+} = require("../store/store");
+
+const apiBaseUrl = process.env.API_BASE_URL || "http://localhost:3000";
+const apiKey = process.env.API_KEY || "dev-api-key";
+
+function buildPayment(overrides = {}) {
+  return {
+    amount: 500,
+    fromAccount: "A123",
+    toAccount: "B456",
+    type: "PURCHASE",
+    channel: "DOMESTIC_POS",
+    issuerType: "INTERNAL",
+    pin: "1234",
+    ...overrides,
+  };
+}
+
+async function postPayment(idempotencyKey, payload) {
+  const response = await fetch(`${apiBaseUrl}/pay`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "x-idempotency-key": idempotencyKey,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return {
+    statusCode: response.status,
+    body: await response.json(),
+  };
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+async function testDuplicateSamePayload() {
+  const idempotencyKey = `reliability-same-${crypto.randomUUID()}`;
+  const payload = buildPayment();
+
+  const responses = await Promise.all(
+    Array.from({ length: 5 }, () => postPayment(idempotencyKey, payload))
+  );
+
+  const accepted = responses.filter((response) => response.statusCode === 202);
+  const duplicates = responses.filter((response) => response.statusCode === 200);
+
+  assert(accepted.length === 1, `expected one accepted request, got ${accepted.length}`);
+  assert(duplicates.length === 4, `expected four duplicate responses, got ${duplicates.length}`);
+  assert(
+    responses.every(
+      (response) => response.body.transactionId === accepted[0].body.transactionId
+    ),
+    "all same-payload concurrent requests should return original transaction id"
+  );
+
+  await pool.query("DELETE FROM outbox_events WHERE txn_id = $1", [
+    accepted[0].body.transactionId,
+  ]);
+  await pool.query("DELETE FROM transactions WHERE txn_id = $1", [
+    accepted[0].body.transactionId,
+  ]);
+
+  console.log("PASS concurrent duplicate idempotency key with same payload");
+}
+
+async function testDuplicateDifferentPayload() {
+  const idempotencyKey = `reliability-different-${crypto.randomUUID()}`;
+
+  const responses = await Promise.all([
+    postPayment(idempotencyKey, buildPayment({ amount: 500 })),
+    postPayment(idempotencyKey, buildPayment({ amount: 700 })),
+    postPayment(idempotencyKey, buildPayment({ amount: 900 })),
+  ]);
+
+  const accepted = responses.filter((response) => response.statusCode === 202);
+  const conflicts = responses.filter((response) => response.statusCode === 409);
+
+  assert(accepted.length === 1, `expected one accepted request, got ${accepted.length}`);
+  assert(conflicts.length === 2, `expected two conflicts, got ${conflicts.length}`);
+
+  await pool.query("DELETE FROM outbox_events WHERE txn_id = $1", [
+    accepted[0].body.transactionId,
+  ]);
+  await pool.query("DELETE FROM transactions WHERE txn_id = $1", [
+    accepted[0].body.transactionId,
+  ]);
+
+  console.log("PASS concurrent duplicate idempotency key with different payloads");
+}
+
+async function testStaleOutboxRecovery() {
+  const txnId = `reliability-stale-${crypto.randomUUID()}`;
+
+  await pool.query(
+    `
+    INSERT INTO outbox_events
+    (
+      txn_id,
+      event_type,
+      payload,
+      status,
+      claimed_at,
+      locked_by,
+      claim_count
+    )
+    VALUES ($1,$2,$3,'PROCESSING',CURRENT_TIMESTAMP - INTERVAL '10 minutes',$4,1)
+    `,
+    [
+      txnId,
+      "TRANSACTION_ACCEPTED",
+      JSON.stringify({ id: txnId }),
+      "test-processor",
+    ]
+  );
+
+  const recovered = await recoverStaleOutboxEvents(1000);
+  const row = await pool.query(
+    "SELECT status, claimed_at, locked_by FROM outbox_events WHERE txn_id = $1",
+    [txnId]
+  );
+
+  assert(
+    recovered.some((event) => event.txn_id === txnId),
+    "stale event should be returned by recovery"
+  );
+  assert(row.rows[0].status === "PENDING", "stale event should reset to PENDING");
+  assert(row.rows[0].claimed_at === null, "stale event should clear claimed_at");
+  assert(row.rows[0].locked_by === null, "stale event should clear locked_by");
+
+  await pool.query("DELETE FROM outbox_events WHERE txn_id = $1", [txnId]);
+
+  console.log("PASS stale outbox recovery");
+}
+
+async function testConcurrentOutboxProcessors() {
+  const prefix = `reliability-concurrent-${crypto.randomUUID()}`;
+  const txnIds = Array.from({ length: 6 }, (_, index) => `${prefix}-${index}`);
+
+  for (const txnId of txnIds) {
+    await pool.query(
+      `
+      INSERT INTO outbox_events (txn_id, event_type, payload, status)
+      VALUES ($1,$2,$3,'PENDING')
+      `,
+      [txnId, "TRANSACTION_ACCEPTED", JSON.stringify({ id: txnId })]
+    );
+  }
+
+  const [firstClaim, secondClaim] = await Promise.all([
+    claimOutboxEvents(4, "test-processor-a"),
+    claimOutboxEvents(4, "test-processor-b"),
+  ]);
+
+  const claimedIds = [...firstClaim, ...secondClaim].map((event) => event.txn_id);
+  const uniqueClaimedIds = new Set(claimedIds);
+
+  assert(claimedIds.length === uniqueClaimedIds.size, "claims should not overlap");
+
+  const rows = await pool.query(
+    `
+    SELECT txn_id, status, locked_by
+    FROM outbox_events
+    WHERE txn_id = ANY($1)
+    `,
+    [txnIds]
+  );
+
+  const processingRows = rows.rows.filter((row) => row.status === "PROCESSING");
+  assert(processingRows.length === 6, "all test events should be claimed exactly once");
+
+  await pool.query("DELETE FROM outbox_events WHERE txn_id = ANY($1)", [txnIds]);
+
+  console.log("PASS concurrent outbox processors");
+}
+
+async function testDuplicateBullMqJobIgnored() {
+  const txnId = `reliability-worker-${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const fullTxn = {
+    id: txnId,
+    idempotencyKey: `worker-${txnId}`,
+    requestHash: crypto.createHash("sha256").update(txnId).digest("hex"),
+    amount: 500,
+    fromAccount: "A123",
+    toAccount: "B456",
+    type: "PURCHASE",
+    channel: "DOMESTIC_POS",
+    issuerType: "INTERNAL",
+    pin: "1234",
+    status: "ACCEPTED",
+    retryCount: 0,
+    processingTimeline: [
+      {
+        status: "ACCEPTED",
+        timestamp: now,
+        message: "Transaction accepted by reliability test",
+      },
+    ],
+  };
+
+  await saveTransactionWithOutbox(fullTxn);
+
+  const first = await handleTransactionJob(
+    { id: `job-${txnId}-1`, data: fullTxn },
+    "test-worker-a"
+  );
+  const second = await handleTransactionJob(
+    { id: `job-${txnId}-2`, data: fullTxn },
+    "test-worker-b"
+  );
+  const row = await getTransaction(txnId);
+
+  assert(first.status === "COMPLETED", "first job should complete the transaction");
+  assert(second.skipped === true, "duplicate job should be skipped");
+  assert(row.status === "COMPLETED", "transaction should remain completed");
+
+  await pool.query("DELETE FROM outbox_events WHERE txn_id = $1", [txnId]);
+  await pool.query("DELETE FROM transactions WHERE txn_id = $1", [txnId]);
+
+  console.log("PASS duplicate BullMQ job ignored after final status");
+}
+
+async function testStaleProcessingTransactionRecovery() {
+  const txnId = `reliability-processing-${crypto.randomUUID()}`;
+
+  await pool.query(
+    `
+    INSERT INTO transactions
+    (
+      txn_id,
+      correlation_id,
+      idempotency_key,
+      request_hash,
+      amount,
+      channel,
+      status,
+      from_account,
+      to_account,
+      type,
+      retry_count,
+      processing_started_at,
+      processor_instance_id,
+      processing_timeline
+    )
+    VALUES ($1,'N/A',$2,$3,500,'DOMESTIC_POS','PROCESSING','A123','B456','PURCHASE',0,CURRENT_TIMESTAMP - INTERVAL '10 minutes',$4,'[]')
+    `,
+    [
+      txnId,
+      `processing-${txnId}`,
+      crypto.createHash("sha256").update(txnId).digest("hex"),
+      "test-worker",
+    ]
+  );
+
+  const recovered = await recoverStaleProcessingTransactions(1000);
+  const row = await getTransaction(txnId);
+
+  assert(
+    recovered.some((transaction) => transaction.txn_id === txnId),
+    "stale PROCESSING transaction should be returned by recovery"
+  );
+  assert(row.status === "ACCEPTED", "stale PROCESSING transaction should reset to ACCEPTED");
+  assert(row.processing_started_at === null, "transaction recovery should clear processing_started_at");
+  assert(row.processor_instance_id === null, "transaction recovery should clear processor_instance_id");
+
+  await pool.query("DELETE FROM transactions WHERE txn_id = $1", [txnId]);
+
+  console.log("PASS stale PROCESSING transaction recovery");
+}
+
+async function testOutboxMaxRecoveryFailure() {
+  const txnId = `reliability-outbox-failed-${crypto.randomUUID()}`;
+
+  await pool.query(
+    `
+    INSERT INTO outbox_events
+    (
+      txn_id,
+      event_type,
+      payload,
+      status,
+      claimed_at,
+      locked_by,
+      claim_count,
+      recovery_count
+    )
+    VALUES ($1,$2,$3,'PROCESSING',CURRENT_TIMESTAMP - INTERVAL '10 minutes',$4,1,2)
+    `,
+    [
+      txnId,
+      "TRANSACTION_ACCEPTED",
+      JSON.stringify({ id: txnId }),
+      "test-processor",
+    ]
+  );
+
+  const recovered = await recoverStaleOutboxEvents(1000, 3);
+  const row = await pool.query(
+    "SELECT status, recovery_count, claimed_at, locked_by FROM outbox_events WHERE txn_id = $1",
+    [txnId]
+  );
+
+  assert(
+    recovered.some((event) => event.txn_id === txnId && event.status === "OUTBOX_FAILED"),
+    "outbox event should be returned as OUTBOX_FAILED"
+  );
+  assert(row.rows[0].status === "OUTBOX_FAILED", "outbox event should move to OUTBOX_FAILED");
+  assert(Number(row.rows[0].recovery_count) === 3, "outbox recovery count should reach max");
+  assert(row.rows[0].claimed_at === null, "failed outbox event should clear claimed_at");
+  assert(row.rows[0].locked_by === null, "failed outbox event should clear locked_by");
+
+  await pool.query("DELETE FROM outbox_events WHERE txn_id = $1", [txnId]);
+
+  console.log("PASS outbox max recovery moves event to OUTBOX_FAILED");
+}
+
+async function main() {
+  const testName = process.argv[2] || "all";
+
+  const tests = {
+    "idempotency-same": testDuplicateSamePayload,
+    "idempotency-different": testDuplicateDifferentPayload,
+    "stale-outbox-recovery": testStaleOutboxRecovery,
+    "concurrent-outbox-processors": testConcurrentOutboxProcessors,
+    "duplicate-worker-job": testDuplicateBullMqJobIgnored,
+    "stale-processing-transaction": testStaleProcessingTransactionRecovery,
+    "outbox-max-recovery": testOutboxMaxRecoveryFailure,
+  };
+
+  if (testName === "all") {
+    for (const test of Object.values(tests)) {
+      await test();
+    }
+  } else if (tests[testName]) {
+    await tests[testName]();
+  } else {
+    throw new Error(`Unknown reliability test: ${testName}`);
+  }
+
+  await transactionQueue.close();
+  await pool.end();
+}
+
+main().catch(async (error) => {
+  console.error("FAIL", error.message);
+  await transactionQueue.close();
+  await pool.end();
+  process.exit(1);
+});
