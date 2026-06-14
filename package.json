@@ -10,7 +10,8 @@
     "outbox": "node outbox.js",
     "test-payment": "node tests/paymentTest.js",
     "test-reliability": "node tests/reliabilityTest.js",
-    "test-transaction-recovery": "node tests/transactionRecoveryTest.js"
+    "test-transaction-recovery": "node tests/transactionRecoveryTest.js",
+    "test-auth": "node tests/apiKeyAuthTest.js"
   },
   "keywords": [],
   "author": "",
