@@ -7,7 +7,7 @@ const data = JSON.stringify({
   type: "PURCHASE",
   channel: "DOMESTIC_POS",
   issuerType: "INTERNAL",
-  pin: "1234",
+  pin: "TEST_PIN",
 });
 
 const options = {

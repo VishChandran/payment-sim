@@ -23,7 +23,7 @@ function buildPayment(overrides = {}) {
     type: "PURCHASE",
     channel: "DOMESTIC_POS",
     issuerType: "INTERNAL",
-    pin: "1234",
+    pin: "TEST_PIN",
     ...overrides,
   };
 }
@@ -204,7 +204,7 @@ async function testDuplicateBullMqJobIgnored() {
     type: "PURCHASE",
     channel: "DOMESTIC_POS",
     issuerType: "INTERNAL",
-    pin: "1234",
+    pinVerified: true,
     status: "ACCEPTED",
     retryCount: 0,
     processingTimeline: [

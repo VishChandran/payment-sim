@@ -133,15 +133,19 @@ async function main() {
       attemptsMade: 3,
       data: txn,
     },
-    new Error("Sensitive data test failure")
+    new Error(`Sensitive data test failure cardNumber=${fullCardNumber} pin=${pin}`)
   );
   const deadLetterResult = await pool.query(
-    "SELECT payload FROM dead_letter_jobs WHERE job_id = $1",
+    "SELECT payload, failed_reason FROM dead_letter_jobs WHERE job_id = $1",
     [jobId]
   );
   assertNoSensitiveValue(
     deadLetterResult.rows[0].payload,
     "dead-letter payload should be sanitized"
+  );
+  assertNoSensitiveValue(
+    deadLetterResult.rows[0].failed_reason,
+    "dead-letter failed_reason should be sanitized"
   );
 
   const server = app.listen(0);

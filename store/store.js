@@ -1,6 +1,7 @@
 const pool = require("../db/connection");
 const {
   sanitizePayload,
+  sanitizeText,
   sanitizeTransactionForPersistence,
 } = require("../utils/sensitiveData");
 
@@ -153,7 +154,7 @@ async function saveDeadLetterJob(job, error) {
     txn.id || null,
     job.queueName,
     JSON.stringify(txn),
-    error.message,
+    sanitizeText(error.message),
     job.attemptsMade,
   ];
 

@@ -95,6 +95,22 @@ function serializeTransactionResponse(txn) {
   return response;
 }
 
+function sanitizeText(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  let sanitized = String(value);
+  sanitized = sanitized.replace(/\b\d{12,19}\b/g, "[REDACTED_CARD]");
+  sanitized = sanitized.replace(/["']?pin["']?\s*:\s*["']?[^"',}\s]+["']?/gi, "[REDACTED_PIN]");
+  sanitized = sanitized.replace(/["']?cardNumber["']?\s*:\s*["']?[^"',}\s]+["']?/gi, "[REDACTED_CARD]");
+  sanitized = sanitized.replace(/["']?card_number["']?\s*:\s*["']?[^"',}\s]+["']?/gi, "[REDACTED_CARD]");
+  sanitized = sanitized.replace(/\bpin\s*[:=]\s*\S+/gi, "[REDACTED_PIN]");
+  sanitized = sanitized.replace(/\bcardNumber\s*[:=]\s*\S+/gi, "[REDACTED_CARD]");
+  sanitized = sanitized.replace(/\bcard_number\s*[:=]\s*\S+/gi, "[REDACTED_CARD]");
+  return sanitized;
+}
+
 function maskSensitiveData(value) {
   const sanitized = removeSensitiveFields(value);
   const last4 = cardLast4(value && (value.cardNumber || value.card_number));
@@ -115,6 +131,7 @@ module.exports = {
   maskSensitiveData,
   removeSensitiveFields,
   sanitizePayload,
+  sanitizeText,
   sanitizeTransactionForPersistence,
   serializeTransactionResponse,
 };

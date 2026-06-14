@@ -161,7 +161,7 @@ const requestHash = crypto
     const now = new Date().toISOString();
     const requiresPin =
       validatedTxn.issuerType === "INTERNAL" && validatedTxn.type !== "BALANCE_INQUIRY";
-    const pinVerified = requiresPin ? validatedTxn.pin === "1234" : true;
+    const pinVerified = requiresPin ? validatedTxn.pin === "TEST_PIN" : true;
 
     const fullTxn = sanitizeTransactionForPersistence({
       id: txnId,

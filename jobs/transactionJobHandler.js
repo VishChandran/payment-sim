@@ -4,6 +4,7 @@ const { routeTransaction } = require("../broker/router");
 const { processTransaction } = require("../processor/processor");
 const { handleInternal } = require("../systems/internal");
 const { handleExternal } = require("../systems/external");
+const { sanitizePayload } = require("../utils/sensitiveData");
 const {
   finalizeTransactionProcessing,
   getTransaction,
@@ -13,7 +14,7 @@ const {
 const FINAL_STATUSES = new Set(["COMPLETED", "DECLINED", "FAILED"]);
 
 async function handleTransactionJob(job, processorInstanceId) {
-  const txn = job.data;
+  const txn = sanitizePayload(job.data);
   const workerId = processorInstanceId || `worker-${crypto.randomUUID()}`;
 
   const existingTxn = await getTransaction(txn.id);
