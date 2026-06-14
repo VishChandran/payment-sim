@@ -1,113 +1,172 @@
 # Payment Processing Simulator
 
-A backend payment processing simulator built with Node.js, Express, PostgreSQL, Redis, and BullMQ.
+`payment-sim` is a learning simulator for resilient payment processing. It models a small payment backend with an API, PostgreSQL persistence, an outbox processor, Redis/BullMQ queueing, and worker-based transaction processing.
 
-The project demonstrates asynchronous transaction processing, queue-based worker orchestration, routing decisions, retry handling, and transaction lifecycle tracking.
-
-## Features
-
-- REST API for transaction processing
-- PostgreSQL persistence
-- Redis and BullMQ queue processing
-- Asynchronous worker architecture
-- Transaction status tracking
-- Retry handling and Dead Letter Queue (DLQ)
-- Internal and external routing
-- Structured logging
-- Docker deployment
+It is intentionally small enough to read end to end, while still demonstrating reliability patterns used in real payment systems. It is not a production payment processor.
 
 ## Architecture
 
 ```text
-Client
-  ↓
-API
-  ↓
-Validation
-  ↓
-Queue
-  ↓
-Worker
-  ↓
-Processor
-  ↓
-Routing
-  ↓
-Database
+Client / Merchant
+  |
+  v
+API process (api.js)
+  - API key auth
+  - validation
+  - risk checks
+  - idempotency handling
+  |
+  v
+PostgreSQL
+  - transactions
+  - outbox_events
+  - dead_letter_jobs
+  |
+  v
+Outbox process (outbox.js)
+  - claims pending events
+  - recovers stale outbox events
+  - enqueues BullMQ jobs
+  - runs stuck transaction recovery
+  |
+  v
+Redis / BullMQ
+  |
+  v
+Worker process (worker.js)
+  - idempotent job handling
+  - transaction routing
+  - retries
+  - durable dead-letter records
 ```
 
-## Tech Stack
+## Key Features
 
-- Node.js
-- Express
-- PostgreSQL
-- Redis
-- BullMQ
-- Docker
+- Separate API, worker, and outbox entrypoints.
+- `/pay` endpoint for accepting payment-like transactions.
+- `/status/:id` endpoint with client ownership checks.
+- Admin-protected `/dead-letter` and `/info` endpoints.
+- PostgreSQL-backed transaction lifecycle state.
+- Redis/BullMQ-backed asynchronous processing.
+- Internal/external routing simulation.
+- Development Docker Compose setup.
+
+## Reliability Patterns
+
+- Atomic transaction insert plus outbox insert in one PostgreSQL transaction.
+- Outbox claiming with `FOR UPDATE SKIP LOCKED`.
+- Race-safe idempotency using a canonical partial unique index on `transactions.idempotency_key`.
+- Same idempotency key + same payload returns the original transaction.
+- Same idempotency key + different payload returns `409`.
+- BullMQ retries with exponential backoff.
+- Durable `dead_letter_jobs` table for failed jobs.
+- Idempotent worker behavior: finalized transactions are not reprocessed.
+- Recovery for stale outbox events and stale `PROCESSING` transactions.
+- Graceful shutdown handlers for API, worker, and outbox processes.
+
+## Security And Data Handling
+
+- API key auth for payment APIs.
+- Multiple client API keys via `API_KEYS`.
+- Client ownership stored on transactions and enforced on status reads.
+- Separate admin API key support for admin endpoints.
+- Constant-time API key comparison.
+- Production startup checks for required API/admin keys.
+- Production CORS allowlist via `ALLOWED_ORIGINS`.
+- PIN is removed before persistence, queueing, DLQ storage, logs, and responses.
+- Plaintext card number is not persisted; the simulator stores `card_last4` and an HMAC `card_fingerprint`.
+- Outbox payloads, BullMQ job data, dead-letter payloads, and status responses are sanitized.
 
 ## Running Locally
 
+Install dependencies:
+
 ```bash
 npm install
-node app.js
 ```
 
-## Running with Docker
+Run the development stack:
 
 ```bash
 docker compose up --build
 ```
 
-## API Endpoints
+This starts:
 
-| Method | Endpoint |
-|----------|----------|
-| GET | / |
-| POST | /pay |
-| GET | /status/:id |
-| GET | /dead-letter |
+- API on `http://localhost:3000`
+- Worker process
+- Outbox/recovery process
+- PostgreSQL
+- Redis
 
-## Example Request
+The Compose file is development-only and uses local ports and default credentials.
 
-```json
-{
-  "amount": 500,
-  "fromAccount": "ACC1001",
-  "toAccount": "ACC2001",
-  "type": "PURCHASE",
-  "network": "CARD_NETWORK"
-}
+You can also run processes manually if Postgres and Redis are already available:
+
+```bash
+npm run dev
+npm run worker
+npm run outbox
 ```
 
-## Key Concepts
+Useful environment variables:
 
-- Asynchronous processing
-- Queue-based architecture
-- Retry and recovery patterns
-- Persistence abstraction
-- Centralized routing
-- Containerized deployment
+```text
+API_KEYS=merchant-a:secret-a,merchant-b:secret-b
+ADMIN_API_KEYS=admin-secret
+CARD_FINGERPRINT_SECRET=local-secret
+ALLOWED_ORIGINS=http://localhost:3000
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/payment_sim
+REDIS_HOST=127.0.0.1
+```
 
-## Architecture Review Enhancements
+## Example Payment
 
-This project was initially built to simulate a payment processing platform covering transaction validation, routing, asynchronous processing, retries, dead-letter handling, and PostgreSQL persistence.
+```bash
+curl -X POST http://localhost:3000/pay \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: secret-a" \
+  -H "x-idempotency-key: demo-001" \
+  -d '{
+    "amount": 500,
+    "fromAccount": "A123",
+    "toAccount": "B456",
+    "type": "PURCHASE",
+    "channel": "DOMESTIC_POS",
+    "issuerType": "INTERNAL",
+    "pin": "TEST_PIN"
+  }'
+```
 
-Following an architecture review, several production-readiness improvements were implemented:
+## Test Commands
 
-### API Authentication
-Added API Key based authentication to prevent anonymous access to payment APIs and transaction status endpoints.
+Core checks:
 
-### Idempotency Controls
-Implemented idempotency keys and request hashing to prevent duplicate payment processing during client retries and network failures.
+```bash
+npm run test:core
+```
 
-### Outbox Pattern
-Implemented the Outbox Pattern to ensure transaction events are persisted before being published for asynchronous processing. This prevents transaction loss in scenarios where database writes succeed but message publication fails.
+Individual scripts:
 
-### Input Validation Improvements
-Enhanced request validation to ensure mandatory transaction attributes are validated before persistence and processing.
+```bash
+npm run test-auth
+npm run test-cors
+npm run test-status-auth
+npm run test-transaction-recovery
+npm run test-sensitive-data
+npm run test-reliability
+```
 
-### Why These Enhancements Were Added
+`test-reliability` expects the API, PostgreSQL, and Redis to be running.
 
-The initial version of the project focused on understanding payment processing flows, routing decisions, asynchronous workers, retries, and transaction lifecycle management.
+## Known Limitations
 
-As the project evolved, additional architecture reviews were performed to identify production-grade resiliency, security, and consistency improvements commonly found in enterprise payment systems. The enhancements above were added as part of that review process.
+- This is a learning simulator, not a production payment system.
+- There is no migration framework yet; schema changes are SQL scripts.
+- Docker Compose is dev-only and uses default credentials.
+- Recovery for stuck `PROCESSING` transactions is timeout-based, not heartbeat/lease based.
+- Queue enqueue and database state are not atomically committed together.
+- Observability is basic logging only; there are no metrics, traces, dashboards, or alerts.
+- Rate limiting is in-memory and not suitable for multi-instance production.
+- `from_account` and `to_account` are still stored as plaintext simulator identifiers.
+- There is no CI pipeline or automated fresh-database integration test harness yet.
