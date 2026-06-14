@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   txn_id VARCHAR(50) UNIQUE NOT NULL,
   correlation_id VARCHAR(100) NOT NULL,
   client_id VARCHAR(100),
-  idempotency_key VARCHAR(100) UNIQUE,
+  idempotency_key VARCHAR(100),
   request_hash VARCHAR(128),
   amount NUMERIC(12,2) NOT NULL,
   channel VARCHAR(50) NOT NULL,
@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS outbox_events (
 
 CREATE INDEX IF NOT EXISTS idx_outbox_events_status_id
 ON outbox_events (status, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_idempotency_key
+ON transactions (idempotency_key)
+WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dead_letter_jobs (
   id SERIAL PRIMARY KEY,

@@ -61,15 +61,32 @@ async function testDuplicateSamePayload() {
 
   const accepted = responses.filter((response) => response.statusCode === 202);
   const duplicates = responses.filter((response) => response.statusCode === 200);
+  const serverErrors = responses.filter((response) => response.statusCode >= 500);
 
   assert(accepted.length === 1, `expected one accepted request, got ${accepted.length}`);
   assert(duplicates.length === 4, `expected four duplicate responses, got ${duplicates.length}`);
+  assert(serverErrors.length === 0, `expected zero 500 responses, got ${serverErrors.length}`);
   assert(
     responses.every(
       (response) => response.body.transactionId === accepted[0].body.transactionId
     ),
     "all same-payload concurrent requests should return original transaction id"
   );
+
+  const transactionRows = await pool.query(
+    "SELECT txn_id FROM transactions WHERE idempotency_key = $1",
+    [idempotencyKey]
+  );
+  assert(
+    transactionRows.rowCount === 1,
+    `expected one transaction row, got ${transactionRows.rowCount}`
+  );
+
+  const outboxRows = await pool.query(
+    "SELECT id FROM outbox_events WHERE txn_id = $1",
+    [accepted[0].body.transactionId]
+  );
+  assert(outboxRows.rowCount === 1, `expected one outbox row, got ${outboxRows.rowCount}`);
 
   await pool.query("DELETE FROM outbox_events WHERE txn_id = $1", [
     accepted[0].body.transactionId,

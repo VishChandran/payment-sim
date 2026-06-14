@@ -37,10 +37,6 @@ async function ensureSchema() {
     ADD COLUMN IF NOT EXISTS client_id VARCHAR(100)
   `);
   await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_idempotency_key_unique
-    ON transactions (idempotency_key)
-  `);
-  await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_events_txn_id_unique
     ON outbox_events (txn_id)
   `);
