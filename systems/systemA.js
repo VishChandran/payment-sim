@@ -1,7 +1,7 @@
 function validatePIN(txn) {
   console.log("🔐 System A - Validating PIN");
 
-  if (txn.pin !== "1234") {
+  if (txn.pinVerified !== true) {
     return {
       status: "DECLINED",
       reason: "Invalid PIN"

@@ -15,6 +15,10 @@ const app = express();
 
 const { evaluateRisk } = require("./risk/riskEngine");
 const { maskSensitiveData } = require("./utils/mask");
+const {
+  sanitizeTransactionForPersistence,
+  serializeTransactionResponse,
+} = require("./utils/sensitiveData");
 const { logEvent } = require("./logger/logger");
 const { validateTransaction } = require("./validation/validator");
 
@@ -88,7 +92,7 @@ app.get("/status/:id", apiKeyOrAdminAuth, async (req, res) => {
     });
   }
 
-  return res.json(txn);
+  return res.json(serializeTransactionResponse(txn));
 });
 
 app.get("/dead-letter", adminApiKeyAuth, (req, res) => {
@@ -155,13 +159,17 @@ const requestHash = crypto
 
     const txnId = crypto.randomUUID();
     const now = new Date().toISOString();
+    const requiresPin =
+      validatedTxn.issuerType === "INTERNAL" && validatedTxn.type !== "BALANCE_INQUIRY";
+    const pinVerified = requiresPin ? validatedTxn.pin === "1234" : true;
 
-    const fullTxn = {
+    const fullTxn = sanitizeTransactionForPersistence({
       id: txnId,
       clientId: req.auth.clientId,
       idempotencyKey,
       requestHash,
       ...validatedTxn,
+      pinVerified,
       status: "ACCEPTED",
       retryCount: 0,
       createdAt: now,
@@ -173,7 +181,7 @@ const requestHash = crypto
           message: "Transaction accepted by API",
         },
       ],
-    };
+    });
 
     logEvent(
       "api",

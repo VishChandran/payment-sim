@@ -1,6 +1,11 @@
 const pool = require("../db/connection");
+const {
+  sanitizePayload,
+  sanitizeTransactionForPersistence,
+} = require("../utils/sensitiveData");
 
 async function insertOutboxEvent(client, txn) {
+  const safePayload = sanitizePayload(txn);
   const query = `
     INSERT INTO outbox_events
     (
@@ -17,7 +22,7 @@ async function insertOutboxEvent(client, txn) {
   const values = [
     txn.id,
     "TRANSACTION_ACCEPTED",
-    JSON.stringify(txn),
+    JSON.stringify(safePayload),
     "PENDING",
   ];
 
@@ -26,6 +31,7 @@ async function insertOutboxEvent(client, txn) {
 }
 
 async function saveTransactionWithOutbox(txn) {
+  const safeTxn = sanitizeTransactionForPersistence(txn);
   const client = await pool.connect();
 
   try {
@@ -41,7 +47,8 @@ async function saveTransactionWithOutbox(txn) {
         client_id,
         amount,
         channel,
-        card_number,
+        card_last4,
+        card_fingerprint,
         status,
         from_account,
         to_account,
@@ -49,26 +56,27 @@ async function saveTransactionWithOutbox(txn) {
         retry_count,
         processing_timeline
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING *;
     `;
 
     const transactionValues = [
-      txn.id,
-      txn.correlationId || "N/A",
-      txn.idempotencyKey || null,
-      txn.requestHash || null,
-      txn.clientId || null,
-      txn.amount,
-      txn.channel,
-      txn.cardNumber || null,
-      txn.status || "ACCEPTED",
-      txn.fromAccount || null,
-      txn.toAccount || null,
-      txn.type || null,
-      txn.retryCount || 0,
-      JSON.stringify(txn.processingTimeline || []),
+      safeTxn.id,
+      safeTxn.correlationId || "N/A",
+      safeTxn.idempotencyKey || null,
+      safeTxn.requestHash || null,
+      safeTxn.clientId || null,
+      safeTxn.amount,
+      safeTxn.channel,
+      safeTxn.cardLast4 || null,
+      safeTxn.cardFingerprint || null,
+      safeTxn.status || "ACCEPTED",
+      safeTxn.fromAccount || null,
+      safeTxn.toAccount || null,
+      safeTxn.type || null,
+      safeTxn.retryCount || 0,
+      JSON.stringify(safeTxn.processingTimeline || []),
     ];
 
     const transactionResult = await client.query(
@@ -100,7 +108,7 @@ async function saveTransactionWithOutbox(txn) {
       };
     }
 
-    const outboxEvent = await insertOutboxEvent(client, txn);
+    const outboxEvent = await insertOutboxEvent(client, safeTxn);
 
     await client.query("COMMIT");
 
@@ -119,6 +127,7 @@ async function saveTransactionWithOutbox(txn) {
 }
 
 async function saveDeadLetterJob(job, error) {
+  const txn = sanitizePayload(job.data || {});
   const query = `
     INSERT INTO dead_letter_jobs
     (
@@ -139,7 +148,6 @@ async function saveDeadLetterJob(job, error) {
     RETURNING *;
   `;
 
-  const txn = job.data || {};
   const values = [
     job.id,
     txn.id || null,

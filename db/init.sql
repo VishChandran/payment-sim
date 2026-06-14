@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   amount NUMERIC(12,2) NOT NULL,
   channel VARCHAR(50) NOT NULL,
   card_number VARCHAR(25),
+  card_last4 VARCHAR(4),
+  card_fingerprint VARCHAR(128),
   status VARCHAR(30) NOT NULL,
   received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

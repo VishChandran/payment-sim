@@ -1,0 +1,3 @@
+ALTER TABLE transactions
+ADD COLUMN IF NOT EXISTS card_last4 VARCHAR(4),
+ADD COLUMN IF NOT EXISTS card_fingerprint VARCHAR(128);

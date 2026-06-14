@@ -13,7 +13,8 @@
     "test-transaction-recovery": "node tests/transactionRecoveryTest.js",
     "test-auth": "node tests/apiKeyAuthTest.js",
     "test-cors": "node tests/corsConfigTest.js",
-    "test-status-auth": "node tests/statusAuthorizationTest.js"
+    "test-status-auth": "node tests/statusAuthorizationTest.js",
+    "test-sensitive-data": "node tests/sensitiveDataTest.js"
   },
   "keywords": [],
   "author": "",
