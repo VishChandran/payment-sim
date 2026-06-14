@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const { adminApiKeyAuth, apiKeyAuth } = require("./middleware/apiKeyAuth");
+const { buildCorsOptions } = require("./middleware/corsConfig");
 
 const app = express();
 
@@ -21,7 +22,7 @@ const {
 console.log("APP STARTING...");
 
 app.use(helmet());
-app.use(cors());
+app.use(cors(buildCorsOptions()));
 app.use(express.json({ limit: "10kb" }));
 
 const apiLimiter = rateLimit({

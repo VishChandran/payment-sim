@@ -11,7 +11,8 @@
     "test-payment": "node tests/paymentTest.js",
     "test-reliability": "node tests/reliabilityTest.js",
     "test-transaction-recovery": "node tests/transactionRecoveryTest.js",
-    "test-auth": "node tests/apiKeyAuthTest.js"
+    "test-auth": "node tests/apiKeyAuthTest.js",
+    "test-cors": "node tests/corsConfigTest.js"
   },
   "keywords": [],
   "author": "",
