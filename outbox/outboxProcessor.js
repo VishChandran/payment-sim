@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const pool = require("../db/connection");
 const { transactionQueue } = require("../jobs/transactionQueue");
+const { sanitizeText } = require("../utils/sensitiveData");
 
 const DEFAULT_STALE_TIMEOUT_MS = Number(process.env.OUTBOX_STALE_TIMEOUT_MS) || 60000;
 const DEFAULT_MAX_RECOVERIES = Number(process.env.OUTBOX_MAX_RECOVERIES) || 3;
@@ -142,6 +143,8 @@ async function processOutboxEvents() {
 
       console.log(`OUTBOX_EVENT_SENT: ${event.txn_id}`);
     } catch (error) {
+      const safeError = sanitizeText(error.message);
+
       await pool.query(
         `
         UPDATE outbox_events
@@ -153,10 +156,10 @@ async function processOutboxEvents() {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
         `,
-        [error.message, event.id]
+        [safeError, event.id]
       );
 
-      console.error(`OUTBOX_EVENT_FAILED: ${event.txn_id}`, error.message);
+      console.error(`OUTBOX_EVENT_FAILED: ${event.txn_id}`, safeError);
     }
   }
 }
@@ -164,7 +167,7 @@ async function processOutboxEvents() {
 function startOutboxProcessor() {
   let running = false;
 
-  setInterval(async () => {
+  return setInterval(async () => {
     if (running) {
       return;
     }

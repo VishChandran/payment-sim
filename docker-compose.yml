@@ -1,3 +1,5 @@
+# Development-only compose file.
+# Uses local ports and default credentials for simulator development; do not use as-is in production.
 services:
   app:
     build: .

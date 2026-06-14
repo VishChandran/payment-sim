@@ -3,6 +3,7 @@ const { connection } = require("./transactionQueue");
 
 const { saveDeadLetterJob, updateTransaction } = require("../store/store");
 const { handleTransactionJob } = require("./transactionJobHandler");
+const { sanitizeText } = require("../utils/sensitiveData");
 
 const worker = new Worker(
   "transaction-processing",
@@ -27,12 +28,13 @@ worker.on("failed", async (job, err) => {
   console.error(`BULLMQ_JOB_FAILED: ${job.id}`, err.message);
 
   const maxAttempts = job.opts.attempts || 1;
+  const safeReason = sanitizeText(err.message);
 
   if (job.attemptsMade < maxAttempts) {
     if (job.data && job.data.id) {
       await updateTransaction(job.data.id, {
         status: "ACCEPTED",
-        reason: err.message,
+        reason: safeReason,
         retryCount: job.attemptsMade,
         clearProcessing: true,
       });
@@ -47,7 +49,7 @@ worker.on("failed", async (job, err) => {
     if (job.data && job.data.id) {
       await updateTransaction(job.data.id, {
         status: "FAILED",
-        reason: err.message,
+        reason: safeReason,
         retryCount: job.attemptsMade,
         clearProcessing: true,
       });

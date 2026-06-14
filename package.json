@@ -14,7 +14,8 @@
     "test-auth": "node tests/apiKeyAuthTest.js",
     "test-cors": "node tests/corsConfigTest.js",
     "test-status-auth": "node tests/statusAuthorizationTest.js",
-    "test-sensitive-data": "node tests/sensitiveDataTest.js"
+    "test-sensitive-data": "node tests/sensitiveDataTest.js",
+    "test:core": "npm run test-auth && npm run test-cors && npm run test-status-auth && npm run test-transaction-recovery && npm run test-sensitive-data"
   },
   "keywords": [],
   "author": "",

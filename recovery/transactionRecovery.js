@@ -21,7 +21,7 @@ function startTransactionRecoveryScheduler({
     `Transaction recovery scheduler started intervalMs=${intervalMs} staleTimeoutMs=${staleTimeoutMs}`
   );
 
-  setInterval(async () => {
+  return setInterval(async () => {
     if (running) {
       return;
     }

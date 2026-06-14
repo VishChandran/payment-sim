@@ -9,8 +9,18 @@ function assert(condition, message) {
   }
 }
 
+async function ensureSchema() {
+  await pool.query(`
+    ALTER TABLE transactions
+    ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS processor_instance_id VARCHAR(100)
+  `);
+}
+
 async function main() {
-  const txnId = `transaction-recovery-${crypto.randomUUID()}`;
+  await ensureSchema();
+
+  const txnId = `txn-rec-${crypto.randomUUID()}`;
 
   await pool.query(
     `
