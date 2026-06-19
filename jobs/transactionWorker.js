@@ -1,14 +1,18 @@
 const { Worker } = require("bullmq");
+const crypto = require("crypto");
+const os = require("os");
 const { connection } = require("./transactionQueue");
 
 const { saveDeadLetterJob, updateTransaction } = require("../store/store");
 const { handleTransactionJob } = require("./transactionJobHandler");
 const { sanitizeText } = require("../utils/sensitiveData");
 
+const processorInstanceId = `${os.hostname()}-${process.pid}-${crypto.randomUUID()}`;
+
 const worker = new Worker(
   "transaction-processing",
   async (job) => {
-    await handleTransactionJob(job, "bullmq-worker");
+    await handleTransactionJob(job, processorInstanceId);
   },
   {
     connection,

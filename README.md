@@ -35,6 +35,7 @@ Redis / BullMQ
   v
 Worker process (worker.js)
   - idempotent job handling
+  - processing lease heartbeats
   - transaction routing
   - retries
   - durable dead-letter records
@@ -61,7 +62,8 @@ Worker process (worker.js)
 - BullMQ retries with exponential backoff.
 - Durable `dead_letter_jobs` table for failed jobs.
 - Idempotent worker behavior: finalized transactions are not reprocessed.
-- Recovery for stale outbox events and stale `PROCESSING` transactions.
+- Renewable worker leases distinguish actively processing transactions from abandoned work.
+- Recovery resets `PROCESSING` transactions only after their lease expires, with a timeout fallback for legacy rows.
 - Graceful shutdown handlers for API, worker, and outbox processes.
 
 ## Security And Data Handling
@@ -118,7 +120,11 @@ CARD_FINGERPRINT_SECRET=local-secret
 ALLOWED_ORIGINS=http://localhost:3000
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/payment_sim
 REDIS_HOST=127.0.0.1
+TRANSACTION_PROCESSING_LEASE_MS=120000
+TRANSACTION_HEARTBEAT_INTERVAL_MS=30000
 ```
+
+Existing databases need the lease schema update in `db/phase3_processing_lease.sql`.
 
 ## Example Payment
 
@@ -164,7 +170,7 @@ npm run test-reliability
 - This is a learning simulator, not a production payment system.
 - There is no migration framework yet; schema changes are SQL scripts.
 - Docker Compose is dev-only and uses default credentials.
-- Recovery for stuck `PROCESSING` transactions is timeout-based, not heartbeat/lease based.
+- Worker recovery uses renewable leases, but it does not guarantee exactly-once external side effects if a worker loses its lease while a downstream operation is still running.
 - Queue enqueue and database state are not atomically committed together.
 - Observability is basic logging only; there are no metrics, traces, dashboards, or alerts.
 - Rate limiting is in-memory and not suitable for multi-instance production.

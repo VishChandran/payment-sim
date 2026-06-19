@@ -187,6 +187,8 @@ async function updateTransaction(id, updates) {
       processing_timeline = COALESCE($7, processing_timeline),
       processing_started_at = CASE WHEN $8 THEN NULL ELSE COALESCE($9, processing_started_at) END,
       processor_instance_id = CASE WHEN $8 THEN NULL ELSE COALESCE($10, processor_instance_id) END,
+      last_heartbeat_at = CASE WHEN $8 THEN NULL ELSE last_heartbeat_at END,
+      lease_expires_at = CASE WHEN $8 THEN NULL ELSE lease_expires_at END,
       updated_at = CURRENT_TIMESTAMP
     WHERE txn_id = $11
     RETURNING *;
@@ -210,7 +212,12 @@ async function updateTransaction(id, updates) {
   return result.rows[0];
 }
 
-async function startTransactionProcessing(id, processorInstanceId, processingTimeline) {
+async function startTransactionProcessing(
+  id,
+  processorInstanceId,
+  processingTimeline,
+  leaseDurationMs
+) {
   const query = `
     UPDATE transactions
     SET
@@ -218,6 +225,8 @@ async function startTransactionProcessing(id, processorInstanceId, processingTim
       processor_instance_id = $2,
       processing_started_at = CURRENT_TIMESTAMP,
       processing_timeline = COALESCE($3, processing_timeline),
+      last_heartbeat_at = CURRENT_TIMESTAMP,
+      lease_expires_at = CURRENT_TIMESTAMP + ($4 * INTERVAL '1 millisecond'),
       updated_at = CURRENT_TIMESTAMP
     WHERE txn_id = $1
       AND status = 'ACCEPTED'
@@ -228,7 +237,26 @@ async function startTransactionProcessing(id, processorInstanceId, processingTim
     id,
     processorInstanceId,
     processingTimeline ? JSON.stringify(processingTimeline) : null,
+    leaseDurationMs,
   ]);
+
+  return result.rows[0];
+}
+
+async function renewTransactionProcessingLease(id, processorInstanceId, leaseDurationMs) {
+  const result = await pool.query(
+    `
+    UPDATE transactions
+    SET last_heartbeat_at = CURRENT_TIMESTAMP,
+        lease_expires_at = CURRENT_TIMESTAMP + ($3 * INTERVAL '1 millisecond'),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE txn_id = $1
+      AND status = 'PROCESSING'
+      AND processor_instance_id = $2
+    RETURNING txn_id, lease_expires_at;
+    `,
+    [id, processorInstanceId, leaseDurationMs]
+  );
 
   return result.rows[0];
 }
@@ -246,6 +274,8 @@ async function finalizeTransactionProcessing(id, processorInstanceId, updates) {
       processing_timeline = COALESCE($9, processing_timeline),
       processing_started_at = NULL,
       processor_instance_id = NULL,
+      last_heartbeat_at = NULL,
+      lease_expires_at = NULL,
       updated_at = CURRENT_TIMESTAMP
     WHERE txn_id = $1
       AND status = 'PROCESSING'
@@ -276,18 +306,26 @@ async function recoverStaleProcessingTransactions(staleTimeoutMs) {
       SELECT txn_id, processor_instance_id
       FROM transactions
       WHERE status = 'PROCESSING'
-        AND processing_started_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 millisecond')
+        AND COALESCE(
+          lease_expires_at,
+          processing_started_at + ($1 * INTERVAL '1 millisecond')
+        ) < CURRENT_TIMESTAMP
     )
     UPDATE transactions
     SET status = 'ACCEPTED',
         reason = 'Recovered stale PROCESSING transaction',
         processing_started_at = NULL,
         processor_instance_id = NULL,
+        last_heartbeat_at = NULL,
+        lease_expires_at = NULL,
         updated_at = CURRENT_TIMESTAMP
     FROM recovered
     WHERE transactions.txn_id = recovered.txn_id
       AND transactions.status = 'PROCESSING'
-      AND transactions.processing_started_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 millisecond')
+      AND COALESCE(
+        transactions.lease_expires_at,
+        transactions.processing_started_at + ($1 * INTERVAL '1 millisecond')
+      ) < CURRENT_TIMESTAMP
     RETURNING transactions.txn_id, recovered.processor_instance_id
     `,
     [staleTimeoutMs]
@@ -317,6 +355,7 @@ module.exports = {
   saveTransactionWithOutbox,
   updateTransaction,
   startTransactionProcessing,
+  renewTransactionProcessingLease,
   finalizeTransactionProcessing,
   recoverStaleProcessingTransactions,
   getTransaction,

@@ -8,10 +8,15 @@ const { sanitizePayload } = require("../utils/sensitiveData");
 const {
   finalizeTransactionProcessing,
   getTransaction,
+  renewTransactionProcessingLease,
   startTransactionProcessing,
 } = require("../store/store");
 
 const FINAL_STATUSES = new Set(["COMPLETED", "DECLINED", "FAILED"]);
+const PROCESSING_LEASE_MS =
+  Number(process.env.TRANSACTION_PROCESSING_LEASE_MS) || 120000;
+const PROCESSING_HEARTBEAT_INTERVAL_MS =
+  Number(process.env.TRANSACTION_HEARTBEAT_INTERVAL_MS) || 30000;
 
 async function handleTransactionJob(job, processorInstanceId) {
   const txn = sanitizePayload(job.data);
@@ -53,7 +58,8 @@ async function handleTransactionJob(job, processorInstanceId) {
   const processingTxn = await startTransactionProcessing(
     txn.id,
     workerId,
-    processingTimeline
+    processingTimeline,
+    PROCESSING_LEASE_MS
   );
 
   if (!processingTxn) {
@@ -71,6 +77,46 @@ async function handleTransactionJob(job, processorInstanceId) {
     jobId: job.id,
   });
 
+  let heartbeatRunning = false;
+  const heartbeat = setInterval(async () => {
+    if (heartbeatRunning) {
+      return;
+    }
+
+    heartbeatRunning = true;
+    try {
+      const renewed = await renewTransactionProcessingLease(
+        txn.id,
+        workerId,
+        PROCESSING_LEASE_MS
+      );
+      if (!renewed) {
+        clearInterval(heartbeat);
+        logEvent("worker", "PROCESSING_LEASE_LOST", txn.id, { workerId });
+      }
+    } catch (error) {
+      logEvent("worker", "PROCESSING_HEARTBEAT_FAILED", txn.id, {
+        workerId,
+        error: error.message,
+      });
+    } finally {
+      heartbeatRunning = false;
+    }
+  }, PROCESSING_HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref();
+
+  try {
+    return await processClaimedTransaction(
+      txn,
+      workerId,
+      processingTimeline
+    );
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+async function processClaimedTransaction(txn, workerId, processingTimeline) {
   const result = processTransaction(txn);
 
   if (result.status === "FAILED") {
@@ -148,4 +194,9 @@ async function handleTransactionJob(job, processorInstanceId) {
   return { skipped: false, status: "COMPLETED" };
 }
 
-module.exports = { FINAL_STATUSES, handleTransactionJob };
+module.exports = {
+  FINAL_STATUSES,
+  PROCESSING_HEARTBEAT_INTERVAL_MS,
+  PROCESSING_LEASE_MS,
+  handleTransactionJob,
+};

@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   worker_id INTEGER,
   processing_started_at TIMESTAMP,
   processor_instance_id VARCHAR(100),
+  last_heartbeat_at TIMESTAMP,
+  lease_expires_at TIMESTAMP,
   route VARCHAR(50),
   reason TEXT,
   result JSONB,
@@ -62,3 +64,6 @@ CREATE TABLE IF NOT EXISTS dead_letter_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_dead_letter_jobs_txn_id
 ON dead_letter_jobs (txn_id);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_processing_lease
+ON transactions (status, lease_expires_at);
