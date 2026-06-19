@@ -124,7 +124,7 @@ async function testDuplicateDifferentPayload() {
 }
 
 async function testStaleOutboxRecovery() {
-  const txnId = `reliability-stale-${crypto.randomUUID()}`;
+  const txnId = `rel-stale-${crypto.randomUUID()}`;
 
   await pool.query(
     `
@@ -148,7 +148,7 @@ async function testStaleOutboxRecovery() {
     ]
   );
 
-  const recovered = await recoverStaleOutboxEvents(1000);
+  const recovered = await recoverStaleOutboxEvents(1000, 3, [txnId]);
   const row = await pool.query(
     "SELECT status, claimed_at, locked_by FROM outbox_events WHERE txn_id = $1",
     [txnId]
@@ -168,7 +168,7 @@ async function testStaleOutboxRecovery() {
 }
 
 async function testConcurrentOutboxProcessors() {
-  const prefix = `reliability-concurrent-${crypto.randomUUID()}`;
+  const prefix = `rel-con-${crypto.randomUUID().slice(0, 30)}`;
   const txnIds = Array.from({ length: 6 }, (_, index) => `${prefix}-${index}`);
 
   for (const txnId of txnIds) {
@@ -182,8 +182,8 @@ async function testConcurrentOutboxProcessors() {
   }
 
   const [firstClaim, secondClaim] = await Promise.all([
-    claimOutboxEvents(4, "test-processor-a"),
-    claimOutboxEvents(4, "test-processor-b"),
+    claimOutboxEvents(4, "test-processor-a", txnIds),
+    claimOutboxEvents(4, "test-processor-b", txnIds),
   ]);
 
   const claimedIds = [...firstClaim, ...secondClaim].map((event) => event.txn_id);
@@ -209,7 +209,7 @@ async function testConcurrentOutboxProcessors() {
 }
 
 async function testDuplicateBullMqJobIgnored() {
-  const txnId = `reliability-worker-${crypto.randomUUID()}`;
+  const txnId = `rel-worker-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   const fullTxn = {
     id: txnId,
@@ -256,7 +256,7 @@ async function testDuplicateBullMqJobIgnored() {
 }
 
 async function testStaleProcessingTransactionRecovery() {
-  const txnId = `reliability-processing-${crypto.randomUUID()}`;
+  const txnId = `rel-proc-${crypto.randomUUID()}`;
 
   await pool.query(
     `
@@ -304,7 +304,7 @@ async function testStaleProcessingTransactionRecovery() {
 }
 
 async function testOutboxMaxRecoveryFailure() {
-  const txnId = `reliability-outbox-failed-${crypto.randomUUID()}`;
+  const txnId = `rel-failed-${crypto.randomUUID()}`;
 
   await pool.query(
     `
@@ -329,7 +329,7 @@ async function testOutboxMaxRecoveryFailure() {
     ]
   );
 
-  const recovered = await recoverStaleOutboxEvents(1000, 3);
+  const recovered = await recoverStaleOutboxEvents(1000, 3, [txnId]);
   const row = await pool.query(
     "SELECT status, recovery_count, claimed_at, locked_by FROM outbox_events WHERE txn_id = $1",
     [txnId]

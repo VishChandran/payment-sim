@@ -1,6 +1,7 @@
 const { app } = require("./app");
-const { config } = require("./config/config");
+const { config, validateRuntimeConfiguration } = require("./config/config");
 const pool = require("./db/connection");
+const { closeRateLimiter } = require("./middleware/rateLimiter");
 const {
   validateAdminApiKeyConfiguration,
   validateApiKeyConfiguration,
@@ -8,6 +9,7 @@ const {
 
 validateApiKeyConfiguration();
 validateAdminApiKeyConfiguration();
+validateRuntimeConfiguration();
 
 console.log("PORT FROM ENV:", process.env.PORT);
 console.log("CONFIG PORT:", config.port);
@@ -26,6 +28,7 @@ async function shutdown(signal) {
     }
 
     try {
+      await closeRateLimiter();
       await pool.end();
       console.log("API_SHUTDOWN_COMPLETE");
       process.exit(0);

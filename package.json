@@ -1,13 +1,14 @@
 {
   "name": "payment-sim",
   "version": "1.0.0",
-  "description": "",
+  "description": "Learning simulator for resilient asynchronous payment processing",
   "main": "index.js",
   "scripts": {
     "start": "node api.js",
     "dev": "node api.js",
     "worker": "node worker.js",
     "outbox": "node outbox.js",
+    "migrate": "node db/migrate.js",
     "test-payment": "node tests/paymentTest.js",
     "test-reliability": "node tests/reliabilityTest.js",
     "test-transaction-recovery": "node tests/transactionRecoveryTest.js",
@@ -15,7 +16,10 @@
     "test-cors": "node tests/corsConfigTest.js",
     "test-status-auth": "node tests/statusAuthorizationTest.js",
     "test-sensitive-data": "node tests/sensitiveDataTest.js",
-    "test:core": "npm run test-auth && npm run test-cors && npm run test-status-auth && npm run test-transaction-recovery && npm run test-sensitive-data"
+    "test-migrations": "node tests/migrationTest.js",
+    "test-observability": "node tests/observabilityTest.js",
+    "test-rate-limit": "node tests/rateLimiterTest.js",
+    "test:core": "npm run test-auth && npm run test-cors && npm run test-status-auth && npm run test-rate-limit && npm run test-migrations && npm run test-transaction-recovery && npm run test-sensitive-data && npm run test-observability"
   },
   "keywords": [],
   "author": "",

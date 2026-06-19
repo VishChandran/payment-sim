@@ -33,4 +33,22 @@ const config = {
     internationalPosReviewLimit: 3000,
   },
 }
-module.exports = { config };
+
+function validateRuntimeConfiguration(env = process.env) {
+  if (env.NODE_ENV !== "production") {
+    return;
+  }
+
+  const required = ["DATABASE_URL", "CARD_FINGERPRINT_SECRET"];
+  for (const name of required) {
+    if (!env[name]) {
+      throw new Error(`${name} must be set when NODE_ENV=production`);
+    }
+  }
+
+  if (!env.REDIS_URL && !env.REDIS_HOST) {
+    throw new Error("REDIS_URL or REDIS_HOST must be set when NODE_ENV=production");
+  }
+}
+
+module.exports = { config, validateRuntimeConfiguration };

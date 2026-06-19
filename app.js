@@ -2,7 +2,6 @@ const express = require("express");
 const crypto = require("crypto");
 const helmet = require("helmet");
 const cors = require("cors");
-const rateLimit = require("express-rate-limit");
 const {
   adminApiKeyAuth,
   apiKeyAuth,
@@ -10,6 +9,9 @@ const {
 } = require("./middleware/apiKeyAuth");
 const { buildCorsOptions } = require("./middleware/corsConfig");
 const { canAccessTransactionStatus } = require("./middleware/statusAuthorization");
+const { apiRateLimiter, pingRateLimiter } = require("./middleware/rateLimiter");
+const { recordHttpMetrics, renderMetrics } = require("./observability/metrics");
+const pool = require("./db/connection");
 
 const app = express();
 
@@ -33,17 +35,8 @@ console.log("APP STARTING...");
 app.use(helmet());
 app.use(cors(buildCorsOptions()));
 app.use(express.json({ limit: "10kb" }));
-
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  message: {
-    status: "REJECTED",
-    reason: "Too many requests. Please try again later.",
-  },
-});
-
-app.use(apiLimiter);
+app.use(recordHttpMetrics);
+app.use(apiRateLimiter);
 
 /* ROUTES */
 
@@ -53,6 +46,25 @@ app.get("/", (req, res) => {
     service: "payment-sim",
     message: "Payment simulator is running",
   });
+});
+
+app.get("/health/live", (req, res) => {
+  res.json({ status: "UP" });
+});
+
+app.get("/health/ready", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    await pingRateLimiter();
+    return res.json({ status: "READY" });
+  } catch (error) {
+    console.error("READINESS_CHECK_FAILED:", error.message);
+    return res.status(503).json({ status: "NOT_READY" });
+  }
+});
+
+app.get("/metrics", adminApiKeyAuth, async (req, res) => {
+  res.type("text/plain; version=0.0.4").send(await renderMetrics(pool));
 });
 
 app.get("/info", adminApiKeyAuth, (req, res) => {

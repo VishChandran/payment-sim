@@ -1,3 +1,7 @@
+const { validateRuntimeConfiguration } = require("./config/config");
+
+validateRuntimeConfiguration();
+
 const pool = require("./db/connection");
 const worker = require("./jobs/transactionWorker");
 const { transactionQueue } = require("./jobs/transactionQueue");

@@ -21,6 +21,7 @@ PostgreSQL
   - transactions
   - outbox_events
   - dead_letter_jobs
+  - schema_migrations
   |
   v
 Outbox process (outbox.js)
@@ -51,6 +52,8 @@ Worker process (worker.js)
 - Redis/BullMQ-backed asynchronous processing.
 - Internal/external routing simulation.
 - Development Docker Compose setup.
+- Ordered, checksum-verified PostgreSQL migrations.
+- Liveness, readiness, and protected Prometheus-format metrics endpoints.
 
 ## Reliability Patterns
 
@@ -65,6 +68,7 @@ Worker process (worker.js)
 - Renewable worker leases distinguish actively processing transactions from abandoned work.
 - Recovery resets `PROCESSING` transactions only after their lease expires, with a timeout fallback for legacy rows.
 - Graceful shutdown handlers for API, worker, and outbox processes.
+- CI runs migrations and integration tests against fresh PostgreSQL and Redis services.
 
 ## Security And Data Handling
 
@@ -75,6 +79,7 @@ Worker process (worker.js)
 - Constant-time API key comparison.
 - Production startup checks for required API/admin keys.
 - Production CORS allowlist via `ALLOWED_ORIGINS`.
+- Redis-backed rate limiting in production; development uses an in-memory limiter.
 - PIN is removed before persistence, queueing, DLQ storage, logs, and responses.
 - Plaintext card number is not persisted; the simulator stores `card_last4` and an HMAC `card_fingerprint`.
 - Outbox payloads, BullMQ job data, dead-letter payloads, and status responses are sanitized.
@@ -85,6 +90,12 @@ Install dependencies:
 
 ```bash
 npm install
+```
+
+Create a local environment file and replace every placeholder secret:
+
+```bash
+cp .env.example .env
 ```
 
 Run the development stack:
@@ -101,11 +112,12 @@ This starts:
 - PostgreSQL
 - Redis
 
-The Compose file is development-only and uses local ports and default credentials.
+The Compose file is development-only and uses local ports. It requires explicit database, Redis, API, admin, and fingerprint secrets from `.env`.
 
-You can also run processes manually if Postgres and Redis are already available:
+You can also run processes manually if Postgres and Redis are already available. Apply migrations first:
 
 ```bash
+npm run migrate
 npm run dev
 npm run worker
 npm run outbox
@@ -120,11 +132,20 @@ CARD_FINGERPRINT_SECRET=local-secret
 ALLOWED_ORIGINS=http://localhost:3000
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/payment_sim
 REDIS_HOST=127.0.0.1
+REDIS_PASSWORD=local-redis-secret
 TRANSACTION_PROCESSING_LEASE_MS=120000
 TRANSACTION_HEARTBEAT_INTERVAL_MS=30000
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX_REQUESTS=20
 ```
 
-Existing databases need the lease schema update in `db/phase3_processing_lease.sql`.
+The migration runner records applied files and checksums in `schema_migrations`. Do not edit an applied migration; add a new ordered file under `db/migrations`.
+
+Operational endpoints:
+
+- `GET /health/live` checks that the API process is alive.
+- `GET /health/ready` checks PostgreSQL and the production rate-limit dependency.
+- `GET /metrics` requires an admin API key and exposes API, database-pool, transaction, outbox, and dead-letter metrics.
 
 ## Example Payment
 
@@ -158,8 +179,11 @@ Individual scripts:
 npm run test-auth
 npm run test-cors
 npm run test-status-auth
+npm run test-rate-limit
+npm run test-migrations
 npm run test-transaction-recovery
 npm run test-sensitive-data
+npm run test-observability
 npm run test-reliability
 ```
 
@@ -168,11 +192,11 @@ npm run test-reliability
 ## Known Limitations
 
 - This is a learning simulator, not a production payment system.
-- There is no migration framework yet; schema changes are SQL scripts.
-- Docker Compose is dev-only and uses default credentials.
+- Migrations are forward-only; automated rollback migrations are not provided.
+- Docker Compose remains a development environment, not a production deployment specification.
 - Worker recovery uses renewable leases, but it does not guarantee exactly-once external side effects if a worker loses its lease while a downstream operation is still running.
 - Queue enqueue and database state are not atomically committed together.
-- Observability is basic logging only; there are no metrics, traces, dashboards, or alerts.
-- Rate limiting is in-memory and not suitable for multi-instance production.
+- Metrics and health checks exist, but there is no distributed tracing, dashboard, alert routing, or defined SLO.
+- Secrets are injected through environment variables; integration with a managed secret store and automated rotation is not included.
 - `from_account` and `to_account` are still stored as plaintext simulator identifiers.
-- There is no CI pipeline or automated fresh-database integration test harness yet.
+- The simulated downstream systems do not provide real issuer idempotency, reconciliation, reversals, or settlement.

@@ -10,7 +10,8 @@ const PROCESSOR_INSTANCE_ID =
 
 async function recoverStaleOutboxEvents(
   staleTimeoutMs = DEFAULT_STALE_TIMEOUT_MS,
-  maxRecoveries = DEFAULT_MAX_RECOVERIES
+  maxRecoveries = DEFAULT_MAX_RECOVERIES,
+  eligibleTxnIds = null
 ) {
   const result = await pool.query(
     `
@@ -19,6 +20,7 @@ async function recoverStaleOutboxEvents(
       FROM outbox_events
       WHERE status = 'PROCESSING'
         AND claimed_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 millisecond')
+        AND ($3::text[] IS NULL OR txn_id = ANY($3))
     )
     UPDATE outbox_events
     SET status = CASE
@@ -37,6 +39,7 @@ async function recoverStaleOutboxEvents(
     WHERE outbox_events.id = recovered.id
       AND outbox_events.status = 'PROCESSING'
       AND outbox_events.claimed_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 millisecond')
+      AND ($3::text[] IS NULL OR outbox_events.txn_id = ANY($3))
     RETURNING
       outbox_events.id,
       outbox_events.txn_id,
@@ -44,7 +47,7 @@ async function recoverStaleOutboxEvents(
       outbox_events.recovery_count,
       recovered.locked_by
     `,
-    [staleTimeoutMs, maxRecoveries]
+    [staleTimeoutMs, maxRecoveries, eligibleTxnIds]
   );
 
   for (const event of result.rows) {
@@ -62,7 +65,11 @@ async function recoverStaleOutboxEvents(
   return result.rows;
 }
 
-async function claimOutboxEvents(limit = 10, processorId = PROCESSOR_INSTANCE_ID) {
+async function claimOutboxEvents(
+  limit = 10,
+  processorId = PROCESSOR_INSTANCE_ID,
+  eligibleTxnIds = null
+) {
   const client = await pool.connect();
 
   try {
@@ -73,11 +80,12 @@ async function claimOutboxEvents(limit = 10, processorId = PROCESSOR_INSTANCE_ID
       SELECT id, txn_id, payload
       FROM outbox_events
       WHERE status = 'PENDING'
+        AND ($2::text[] IS NULL OR txn_id = ANY($2))
       ORDER BY id
       LIMIT $1
       FOR UPDATE SKIP LOCKED
       `,
-      [limit]
+      [limit, eligibleTxnIds]
     );
 
     const eventIds = result.rows.map((event) => event.id);
