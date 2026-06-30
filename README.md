@@ -54,12 +54,14 @@ Worker process (worker.js)
 - Development Docker Compose setup.
 - Ordered, checksum-verified PostgreSQL migrations.
 - Liveness, readiness, and protected Prometheus-format metrics endpoints.
+- Reliability-oriented metrics for outbox age and expired processing leases.
 
 ## Reliability Patterns
 
 - Atomic transaction insert plus outbox insert in one PostgreSQL transaction.
 - Outbox claiming with `FOR UPDATE SKIP LOCKED`.
 - Race-safe idempotency using a canonical partial unique index on `transactions.idempotency_key`.
+- Canonical request hashing so semantically identical JSON bodies do not conflict due to key order.
 - Same idempotency key + same payload returns the original transaction.
 - Same idempotency key + different payload returns `409`.
 - BullMQ retries with exponential backoff.
@@ -145,7 +147,7 @@ Operational endpoints:
 
 - `GET /health/live` checks that the API process is alive.
 - `GET /health/ready` checks PostgreSQL and the production rate-limit dependency.
-- `GET /metrics` requires an admin API key and exposes API, database-pool, transaction, outbox, and dead-letter metrics.
+- `GET /metrics` requires an admin API key and exposes API, database-pool, transaction, outbox, outbox-age, expired-lease, and dead-letter metrics.
 
 ## Example Payment
 
@@ -170,7 +172,7 @@ curl -X POST http://localhost:3000/pay \
 Core checks:
 
 ```bash
-npm run test:core
+npm test
 ```
 
 Individual scripts:
@@ -180,6 +182,7 @@ npm run test-auth
 npm run test-cors
 npm run test-status-auth
 npm run test-rate-limit
+npm run test-request-hash
 npm run test-migrations
 npm run test-transaction-recovery
 npm run test-sensitive-data

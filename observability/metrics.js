@@ -31,10 +31,31 @@ function labels(key) {
 }
 
 async function renderMetrics(pool) {
-  const [transactionStatuses, outboxStatuses, deadLetters] = await Promise.all([
+  const [
+    transactionStatuses,
+    outboxStatuses,
+    deadLetters,
+    outboxAge,
+    expiredLeases,
+  ] = await Promise.all([
     pool.query("SELECT status, COUNT(*)::integer AS count FROM transactions GROUP BY status"),
     pool.query("SELECT status, COUNT(*)::integer AS count FROM outbox_events GROUP BY status"),
     pool.query("SELECT COUNT(*)::integer AS count FROM dead_letter_jobs"),
+    pool.query(`
+      SELECT
+        COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at) FILTER (WHERE status = 'PENDING'))), 0)::integer
+          AS oldest_pending_seconds,
+        COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(claimed_at) FILTER (WHERE status = 'PROCESSING'))), 0)::integer
+          AS oldest_processing_seconds
+      FROM outbox_events
+    `),
+    pool.query(`
+      SELECT COUNT(*)::integer AS count
+      FROM transactions
+      WHERE status = 'PROCESSING'
+        AND lease_expires_at IS NOT NULL
+        AND lease_expires_at < CURRENT_TIMESTAMP
+    `),
   ]);
   const lines = [
     "# HELP payment_sim_uptime_seconds Process uptime in seconds.",
@@ -80,6 +101,16 @@ async function renderMetrics(pool) {
   for (const row of outboxStatuses.rows) {
     lines.push(`payment_sim_outbox_events{status="${row.status}"} ${row.count}`);
   }
+
+  lines.push(
+    "# HELP payment_sim_outbox_oldest_event_age_seconds Oldest outbox event age by processing state.",
+    "# TYPE payment_sim_outbox_oldest_event_age_seconds gauge",
+    `payment_sim_outbox_oldest_event_age_seconds{state="pending"} ${outboxAge.rows[0].oldest_pending_seconds}`,
+    `payment_sim_outbox_oldest_event_age_seconds{state="processing"} ${outboxAge.rows[0].oldest_processing_seconds}`,
+    "# HELP payment_sim_expired_processing_leases Processing transactions whose worker lease has expired.",
+    "# TYPE payment_sim_expired_processing_leases gauge",
+    `payment_sim_expired_processing_leases ${expiredLeases.rows[0].count}`
+  );
 
   lines.push(
     "# HELP payment_sim_dead_letter_jobs Durable dead-letter job count.",

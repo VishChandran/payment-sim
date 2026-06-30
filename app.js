@@ -22,6 +22,7 @@ const {
   serializeTransactionResponse,
 } = require("./utils/sensitiveData");
 const { logEvent } = require("./logger/logger");
+const { createRequestHash } = require("./utils/requestHash");
 const { validateTransaction } = require("./validation/validator");
 
 const {
@@ -129,17 +130,14 @@ app.post("/pay", apiKeyAuth, async (req, res) => {
     const txn = req.body;
     const idempotencyKey = req.header("x-idempotency-key");
 
-if (!idempotencyKey) {
-  return res.status(400).json({
-    status: "DECLINED",
-    reason: "Missing x-idempotency-key header",
-  });
-}
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        status: "DECLINED",
+        reason: "Missing x-idempotency-key header",
+      });
+    }
 
-const requestHash = crypto
-  .createHash("sha256")
-  .update(JSON.stringify(txn))
-  .digest("hex");
+    const requestHash = createRequestHash(txn);
 
     logEvent("api", "RAW_TRANSACTION_RECEIVED", "N/A", maskSensitiveData(txn));
 

@@ -30,6 +30,8 @@ async function main() {
     assert(metrics.status === 200, "expected authorized metrics request to succeed");
     assert(body.includes("payment_sim_http_requests_total"), "expected HTTP metrics");
     assert(body.includes("payment_sim_outbox_events"), "expected outbox metrics");
+    assert(body.includes("payment_sim_outbox_oldest_event_age_seconds"), "expected outbox age metrics");
+    assert(body.includes("payment_sim_expired_processing_leases"), "expected processing lease metrics");
     assert(body.includes("payment_sim_dead_letter_jobs"), "expected dead-letter metrics");
 
     console.log("PASS liveness, readiness, and protected operational metrics");

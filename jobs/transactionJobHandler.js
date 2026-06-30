@@ -18,6 +18,17 @@ const PROCESSING_LEASE_MS =
 const PROCESSING_HEARTBEAT_INTERVAL_MS =
   Number(process.env.TRANSACTION_HEARTBEAT_INTERVAL_MS) || 30000;
 
+function appendTimeline(processingTimeline, status, message) {
+  return [
+    ...processingTimeline,
+    {
+      status,
+      timestamp: new Date().toISOString(),
+      message,
+    },
+  ];
+}
+
 async function handleTransactionJob(job, processorInstanceId) {
   const txn = sanitizePayload(job.data);
   const workerId = processorInstanceId || `worker-${crypto.randomUUID()}`;
@@ -128,6 +139,11 @@ async function processClaimedTransaction(txn, workerId, processingTimeline) {
       status: "DECLINED",
       reason: result.reason,
       workerId: 1,
+      processingTimeline: appendTimeline(
+        processingTimeline,
+        "DECLINED",
+        `Transaction declined by processor: ${result.reason}`
+      ),
     });
 
     if (!finalizedTxn) {
@@ -158,6 +174,11 @@ async function processClaimedTransaction(txn, workerId, processingTimeline) {
       route,
       reason: finalResult.reason,
       workerId: 1,
+      processingTimeline: appendTimeline(
+        processingTimeline,
+        "DECLINED",
+        `Transaction declined by routed system: ${finalResult.reason}`
+      ),
     });
 
     if (!finalizedTxn) {
@@ -172,19 +193,15 @@ async function processClaimedTransaction(txn, workerId, processingTimeline) {
     route,
     result: finalResult,
     workerId: 1,
-    processingTimeline: [
-      ...processingTimeline,
-      {
-        status: "PROCESSING",
-        timestamp: new Date().toISOString(),
-        message: "BullMQ worker processed transaction",
-      },
-      {
-        status: "COMPLETED",
-        timestamp: new Date().toISOString(),
-        message: "Transaction processed successfully",
-      },
-    ],
+    processingTimeline: appendTimeline(
+      appendTimeline(
+        processingTimeline,
+        "PROCESSING",
+        "BullMQ worker processed transaction"
+      ),
+      "COMPLETED",
+      "Transaction processed successfully"
+    ),
   });
 
   if (!finalizedTxn) {
